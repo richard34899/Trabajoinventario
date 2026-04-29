@@ -14,7 +14,13 @@ public class ProyectoInventarios {
      * @param args the command line arguments
      */
     public static void main(String[] args) {
-        // TODO code application logic here
+        InicioDashboard.aplicarLookAndFeel();
+
+        java.awt.EventQueue.invokeLater(new Runnable() {
+            public void run() {
+                new InicioDashboard().setVisible(true);
+            }
+        });
     }
     
 }
