@@ -15,6 +15,24 @@ import javax.swing.JOptionPane;
 public class ControlandoInventario {
     
     private final String ARCHIVO = "productos.csv";
+    private final String ARCHIVO_MOV_ENC = "mov_enc.csv";
+    private final String ARCHIVO_MOV_DET = "mov_det.csv";
+    private final String ARCHIVO_MOV_HIST = "mov_hist.csv";
+    private final String ARCHIVO_CONFIG = "configuracion.csv";
+    private static final String ENCABEZADO_MOV_ENC = "No. movimiento,Fecha,Tipo,Motivo";
+    private static final String ENCABEZADO_MOV_DET = "No. movimiento,Cantidad,Clave producto";
+    private static final String ENCABEZADO_MOV_HIST = "No. movimiento,Clave,Producto,Tipo,Fecha,Cantidad,Motivo,Stock antes,Stock despues";
+    private static final String ENCABEZADO_CONFIG = "Costo pedido,H,Dias entrega global";
+    private static final String CONFIG_DEFAULT = "100.0,10.0,1";
+
+    public ControlandoInventario() {
+        try {
+            normalizarArchivosMovimiento();
+            normalizarArchivoConfiguracion();
+        } catch (IOException ex) {
+            // Se intenta continuar con los datos actuales.
+        }
+    }
 
     // --- AQUÍ SE MUDARON TODAS TUS VALIDACIONES ---
     public boolean validarTodo(String clave, String nombre, int catIndex, String stockA, 
@@ -109,6 +127,969 @@ public class ControlandoInventario {
         File f = new File(ARCHIVO);
         if(!f.exists()) return false;
         return Files.lines(f.toPath()).anyMatch(l -> l.split(",")[0].equalsIgnoreCase(clave));
+    }
+
+    public List<String[]> leerProductos() throws IOException {
+        List<String[]> productos = new ArrayList<>();
+        File archivo = new File(ARCHIVO);
+        if (!archivo.exists()) {
+            return productos;
+        }
+
+        try (BufferedReader br = new BufferedReader(new FileReader(archivo))) {
+            String linea;
+            while ((linea = br.readLine()) != null) {
+                String[] datos = linea.split(",");
+                if (datos.length >= 10) {
+                    productos.add(datos);
+                }
+            }
+        }
+        return productos;
+    }
+
+    public ParametrosAnalisis leerParametrosAnalisis() throws IOException {
+        normalizarArchivoConfiguracion();
+        File archivo = new File(ARCHIVO_CONFIG);
+        try (BufferedReader br = new BufferedReader(new FileReader(archivo))) {
+            String linea;
+            while ((linea = br.readLine()) != null) {
+                if (linea == null || linea.trim().isEmpty()) {
+                    continue;
+                }
+                String[] datos = linea.split(",", -1);
+                if (esEncabezadoConfiguracion(datos)) {
+                    continue;
+                }
+                if (datos.length >= 3) {
+                    double costoPedido = parsearDecimalSeguro(datos[0], 100.0);
+                    double h = parsearDecimalSeguro(datos[1], 10.0);
+                    int diasEntrega = parsearEnteroSeguro(datos[2], 1);
+                    return new ParametrosAnalisis(costoPedido, h, diasEntrega);
+                }
+            }
+        }
+        return new ParametrosAnalisis(100.0, 10.0, 1);
+    }
+
+    public void guardarParametrosAnalisis(double costoPedido, double h, int diasEntrega) throws IOException {
+        normalizarArchivoConfiguracion();
+        List<String> lineas = new ArrayList<>();
+        lineas.add(ENCABEZADO_CONFIG);
+        lineas.add(String.format(Locale.US, "%.2f,%.2f,%d", costoPedido, h, diasEntrega));
+        Files.write(new File(ARCHIVO_CONFIG).toPath(), lineas);
+    }
+
+    public List<String[]> leerMovimientos() throws IOException {
+        File archivoHist = new File(ARCHIVO_MOV_HIST);
+        if (archivoHist.exists()) {
+            List<String[]> movimientosHistorial = leerMovimientosDesdeHistorial();
+            if (!movimientosHistorial.isEmpty()) {
+                return movimientosHistorial;
+            }
+        }
+
+        return leerMovimientosReconstruidos();
+    }
+
+    private List<String[]> leerMovimientosReconstruidos() throws IOException {
+        File archivoEnc = new File(ARCHIVO_MOV_ENC);
+        if (!archivoEnc.exists()) {
+            return new ArrayList<>();
+        }
+
+        Map<String, String[]> encabezados = new HashMap<>();
+        try (BufferedReader br = new BufferedReader(new FileReader(archivoEnc))) {
+            String linea;
+            while ((linea = br.readLine()) != null) {
+                String[] datos = linea.split(",", -1);
+                if (esEncabezadoMovimientoEnc(datos)) {
+                    continue;
+                }
+                if (datos.length >= 7) {
+                    encabezados.put(datos[0], datos);
+                } else if (datos.length >= 4) {
+                    encabezados.put(datos[0], datos);
+                }
+            }
+        }
+
+        List<String[]> detalles = leerDetallesMovimientoInterno();
+        List<String[]> movimientos = new ArrayList<>();
+        Map<String, Integer> stockActualPorClave = new HashMap<>();
+        for (String[] producto : leerProductos()) {
+            stockActualPorClave.put(producto[0], Integer.parseInt(producto[3]));
+        }
+        Set<String> clavesConAjuste = new HashSet<>();
+
+        for (String[] detalle : detalles) {
+            String[] encabezado = encabezados.get(detalle[0]);
+            if (encabezado == null) {
+                continue;
+            }
+
+            String clave = detalle[3];
+            String nombre = detalle[2];
+            String cantidad = detalle[1];
+            String tipo;
+            String fecha;
+            String motivo;
+            if (encabezado.length >= 4) {
+                tipo = encabezado[2];
+                fecha = encabezado[1];
+                motivo = encabezado[3];
+            } else {
+                continue;
+            }
+            String stockAntes = detalle[4];
+            String stockDespues = detalle[5];
+            String motivoDetalle = detalle[6];
+
+            if (stockAntes.isBlank() && stockDespues.isBlank()) {
+                Integer stockDespuesActual = stockActualPorClave.get(clave);
+                if (stockDespuesActual != null && !clavesConAjuste.contains(clave)) {
+                    int cantidadNumero = Integer.parseInt(cantidad);
+                    if ("Entrada".equalsIgnoreCase(tipo)) {
+                        stockDespues = String.valueOf(stockDespuesActual);
+                        stockAntes = String.valueOf(stockDespuesActual - cantidadNumero);
+                        stockActualPorClave.put(clave, stockDespuesActual - cantidadNumero);
+                    } else if ("Salida".equalsIgnoreCase(tipo)) {
+                        stockDespues = String.valueOf(stockDespuesActual);
+                        stockAntes = String.valueOf(stockDespuesActual + cantidadNumero);
+                        stockActualPorClave.put(clave, stockDespuesActual + cantidadNumero);
+                    } else {
+                        stockDespues = String.valueOf(stockDespuesActual);
+                        stockAntes = "";
+                        clavesConAjuste.add(clave);
+                    }
+                }
+            }
+
+            movimientos.add(new String[]{
+                detalle[0], // numero movimiento
+                clave,
+                nombre,
+                tipo,
+                fecha,
+                cantidad,
+                motivoDetalle.isBlank() ? motivo : motivoDetalle,
+                stockAntes,
+                stockDespues
+            });
+        }
+        return movimientos;
+    }
+
+    private List<String[]> leerMovimientosDesdeHistorial() throws IOException {
+        List<String[]> movimientos = new ArrayList<>();
+        File archivoHist = new File(ARCHIVO_MOV_HIST);
+        if (!archivoHist.exists()) {
+            return movimientos;
+        }
+
+        try (BufferedReader br = new BufferedReader(new FileReader(archivoHist))) {
+            String linea;
+            while ((linea = br.readLine()) != null) {
+                String[] datos = linea.split(",", -1);
+                if (esEncabezadoMovimientoHist(datos)) {
+                    continue;
+                }
+                if (datos.length >= 9) {
+                    movimientos.add(new String[]{
+                        datos[0], // no
+                        datos[1], // clave
+                        datos[2], // producto
+                        datos[3], // tipo
+                        datos[4], // fecha
+                        datos[5], // cantidad
+                        datos[6], // motivo
+                        datos[7], // stock antes
+                        datos[8]  // stock despues
+                    });
+                }
+            }
+        }
+
+        movimientos.sort((a, b) -> {
+            int comparacionFecha = b[4].compareToIgnoreCase(a[4]);
+            if (comparacionFecha != 0) {
+                return comparacionFecha;
+            }
+            return compararNumeroMovimientoDesc(a[0], b[0]);
+        });
+        return movimientos;
+    }
+
+    public List<String[]> leerDetallesMovimiento() throws IOException {
+        List<String[]> detalles = new ArrayList<>();
+        for (String[] detalle : leerDetallesMovimientoInterno()) {
+            detalles.add(new String[]{detalle[0], detalle[1], detalle[2], detalle[3]});
+        }
+        return detalles;
+    }
+
+    public List<String[]> leerHistorialNotas() throws IOException {
+        List<String[]> notas = new ArrayList<>();
+        File archivoEnc = new File(ARCHIVO_MOV_ENC);
+        if (!archivoEnc.exists()) {
+            return notas;
+        }
+
+        try (BufferedReader br = new BufferedReader(new FileReader(archivoEnc))) {
+            String linea;
+            while ((linea = br.readLine()) != null) {
+                String[] datos = linea.split(",", -1);
+                if (esEncabezadoMovimientoEnc(datos)) {
+                    continue;
+                }
+                if (datos.length >= 4) {
+                    notas.add(new String[]{datos[0], datos[1], datos[2], datos[3], "", "", ""});
+                }
+            }
+        }
+
+        notas.sort((a, b) -> compararNumeroMovimientoDesc(a[0], b[0]));
+        return notas;
+    }
+
+    public List<String[]> leerDetallePorMovimiento(String numeroMovimiento) throws IOException {
+        List<String[]> detalleNota = new ArrayList<>();
+        for (String[] detalle : leerDetallesMovimientoInterno()) {
+            if (numeroMovimiento.equalsIgnoreCase(detalle[0])) {
+                detalleNota.add(new String[]{detalle[1], detalle[2]});
+            }
+        }
+        return detalleNota;
+    }
+
+    private List<String[]> leerDetallesMovimientoInterno() throws IOException {
+        List<String[]> detalles = new ArrayList<>();
+        File archivoDet = new File(ARCHIVO_MOV_DET);
+        if (!archivoDet.exists()) {
+            return detalles;
+        }
+        List<String[]> productos = leerProductos();
+
+        try (BufferedReader br = new BufferedReader(new FileReader(archivoDet))) {
+            String linea;
+            while ((linea = br.readLine()) != null) {
+                String[] datos = linea.split(",", -1);
+                if (esEncabezadoMovimientoDet(datos)) {
+                    continue;
+                }
+                if (datos.length >= 6) {
+                    // Formato anterior: no, clave, nombre, cantidad, stockAntes, stockDespues
+                    detalles.add(new String[]{
+                        datos[0], // numero movimiento
+                        datos[3], // cantidad
+                        datos[2], // nombre
+                        datos[1], // clave
+                        datos[4], // stock antes
+                        datos[5], // stock despues
+                        datos.length > 6 ? datos[6] : ""
+                    });
+                } else if (datos.length >= 4) {
+                    // Formato intermedio: no, cantidad, producto, motivo
+                    String claveReconstruida = esClaveProducto(productos, datos[2]) ? datos[2] : buscarClavePorNombre(productos, datos[2]);
+                    String nombreReconstruido = buscarNombrePorClave(productos, claveReconstruida, datos[2]);
+                    detalles.add(new String[]{
+                        datos[0],
+                        datos[1],
+                        nombreReconstruido,
+                        claveReconstruida,
+                        "",
+                        "",
+                        datos[3]
+                    });
+                } else if (datos.length >= 3) {
+                    // Formato nuevo de detalle: no, cantidad, clave o producto
+                    String claveReconstruida = esClaveProducto(productos, datos[2]) ? datos[2] : buscarClavePorNombre(productos, datos[2]);
+                    String nombreReconstruido = buscarNombrePorClave(productos, claveReconstruida, datos[2]);
+                    detalles.add(new String[]{
+                        datos[0],
+                        datos[1],
+                        nombreReconstruido,
+                        claveReconstruida,
+                        "",
+                        "",
+                        ""
+                    });
+                } else if (datos.length >= 2) {
+                    // Formato intermedio de detalle: cantidad, producto
+                    String claveReconstruida = buscarClavePorNombre(productos, datos[1]);
+                    detalles.add(new String[]{
+                        "",
+                        datos[0],
+                        datos[1],
+                        claveReconstruida,
+                        "",
+                        "",
+                        ""
+                    });
+                }
+            }
+        }
+
+        detalles.sort((a, b) -> compararNumeroMovimientoDesc(a[0], b[0]));
+        return detalles;
+    }
+
+    public List<String[]> leerMovimientosPorClave(String claveProducto) throws IOException {
+        List<String[]> movimientos = leerMovimientos();
+        movimientos.removeIf(mov -> !mov[1].equalsIgnoreCase(claveProducto));
+        movimientos.sort((a, b) -> {
+            int comparacionFecha = b[4].compareToIgnoreCase(a[4]);
+            if (comparacionFecha != 0) {
+                return comparacionFecha;
+            }
+            return compararNumeroMovimientoDesc(a[0], b[0]);
+        });
+        return movimientos;
+    }
+
+    public List<String[]> leerMovimientosPorPrefijoClave(String prefijoClave) throws IOException {
+        List<String[]> movimientos = leerMovimientos();
+        String prefijo = prefijoClave == null ? "" : prefijoClave.trim().toUpperCase();
+        movimientos.removeIf(mov -> mov[1] == null || !mov[1].toUpperCase().startsWith(prefijo));
+        movimientos.sort((a, b) -> {
+            int comparacionFecha = b[4].compareToIgnoreCase(a[4]);
+            if (comparacionFecha != 0) {
+                return comparacionFecha;
+            }
+            return compararNumeroMovimientoDesc(a[0], b[0]);
+        });
+        return movimientos;
+    }
+
+    public ResultadoValidacion registrarMovimiento(MovimientoData movimiento) {
+        return validarMovimientoCompleto(Collections.singletonList(new DetalleMovimientoData(
+                movimiento.getClaveProducto(),
+                movimiento.getNombreProducto(),
+                movimiento.getCantidad(),
+                movimiento.getTipoMovimiento(),
+                movimiento.getMotivo())));
+    }
+
+    public ResultadoValidacion validarMovimientoCompleto(List<DetalleMovimientoData> detalles) {
+        try {
+            if (detalles == null || detalles.isEmpty()) {
+                return ResultadoValidacion.error("detalle", "Agrega al menos un producto al movimiento.");
+            }
+
+            List<String[]> productos = leerProductos();
+            List<String> productosConAdvertencia = new ArrayList<>();
+
+            for (DetalleMovimientoData detalle : detalles) {
+                String tipoMovimiento = detalle.getTipoMovimiento();
+                String[] producto = buscarProducto(productos, detalle.getClaveProducto());
+                if (producto == null) {
+                    return ResultadoValidacion.error("producto", "Selecciona un producto valido.");
+                }
+
+                int stockActual = Integer.parseInt(producto[3]);
+                int stockMinimo = Integer.parseInt(producto[4]);
+                boolean activo = Boolean.parseBoolean(producto[9]);
+                int cantidad = detalle.getCantidad();
+
+                if (cantidad < 0) {
+                    return ResultadoValidacion.error("cantidad", "La cantidad no puede ser negativa.");
+                }
+
+                if ("Ajuste".equalsIgnoreCase(tipoMovimiento) && detalle.getMotivo().trim().isEmpty()) {
+                    return ResultadoValidacion.error("motivo", "No se permite ajuste sin comentario.");
+                }
+
+                if (("Entrada".equalsIgnoreCase(tipoMovimiento) || "Salida".equalsIgnoreCase(tipoMovimiento)) && !activo) {
+                    return ResultadoValidacion.error("producto", "No se permite entrada o salida para productos deshabilitados. Solo ajuste.");
+                }
+
+                if ("Salida".equalsIgnoreCase(tipoMovimiento) && cantidad > stockActual) {
+                    return ResultadoValidacion.error("cantidad", "No puede dar salida si el stock no es suficiente.");
+                }
+
+                if ("Entrada".equalsIgnoreCase(tipoMovimiento) && stockMinimo > 0 && (stockActual + cantidad) > (stockMinimo * 3)) {
+                    productosConAdvertencia.add(detalle.getNombreProducto());
+                }
+            }
+
+            if (!productosConAdvertencia.isEmpty()) {
+                return ResultadoValidacion.advertencia("detalle",
+                        "La entrada generara sobreinventario en: " + String.join(", ", productosConAdvertencia) + ".");
+            }
+
+            return ResultadoValidacion.ok();
+        } catch (IOException e) {
+            return ResultadoValidacion.error("producto", "No fue posible validar el movimiento.");
+        }
+    }
+
+    public void aplicarMovimiento(MovimientoData movimiento) throws IOException {
+        aplicarMovimientoCompleto(
+                movimiento.getNumeroMovimiento(),
+                movimiento.getFechaMovimiento(),
+                movimiento.getTipoMovimiento(),
+                movimiento.getMotivo(),
+                Collections.singletonList(new DetalleMovimientoData(
+                        movimiento.getClaveProducto(),
+                        movimiento.getNombreProducto(),
+                        movimiento.getCantidad(),
+                        movimiento.getTipoMovimiento(),
+                        movimiento.getMotivo())));
+    }
+
+    public void aplicarMovimientoCompleto(String numeroMovimiento, String fechaMovimiento, String tipoMovimiento,
+            String motivo, List<DetalleMovimientoData> detalles) throws IOException {
+        List<String[]> productos = leerProductos();
+        guardarEncabezadoMovimiento(numeroMovimiento, fechaMovimiento, tipoMovimiento, motivo);
+
+        for (DetalleMovimientoData detalle : detalles) {
+            String[] producto = buscarProducto(productos, detalle.getClaveProducto());
+            if (producto == null) {
+                throw new IOException("Producto no encontrado.");
+            }
+
+            int stockActual = Integer.parseInt(producto[3]);
+            int nuevoStock = calcularNuevoStock(stockActual, detalle.getTipoMovimiento(), detalle.getCantidad());
+            producto[3] = String.valueOf(nuevoStock);
+            guardarDetalleMovimiento(numeroMovimiento, detalle, stockActual, nuevoStock);
+            guardarMovimientoHistorial(numeroMovimiento, fechaMovimiento, detalle, stockActual, nuevoStock);
+        }
+
+        guardarProductos(productos);
+    }
+
+    private int calcularNuevoStock(int stockActual, String tipoMovimiento, int cantidad) {
+        if ("Entrada".equalsIgnoreCase(tipoMovimiento)) {
+            return stockActual + cantidad;
+        }
+        if ("Salida".equalsIgnoreCase(tipoMovimiento)) {
+            return stockActual - cantidad;
+        }
+        return cantidad;
+    }
+
+    private void guardarProductos(List<String[]> productos) throws IOException {
+        Collections.sort(productos, (a, b) -> a[0].compareToIgnoreCase(b[0]));
+        try (PrintWriter pw = new PrintWriter(new FileWriter(ARCHIVO))) {
+            for (String[] producto : productos) {
+                pw.println(String.join(",", producto));
+            }
+        }
+    }
+
+    private void guardarEncabezadoMovimiento(String numeroMovimiento, String fechaMovimiento, String tipoMovimiento,
+            String motivo) throws IOException {
+        File archivoEnc = new File(ARCHIVO_MOV_ENC);
+        asegurarArchivoConEncabezado(archivoEnc, ENCABEZADO_MOV_ENC);
+
+        try (PrintWriter pwEnc = new PrintWriter(new FileWriter(archivoEnc, true))) {
+            pwEnc.println(String.join(",",
+                    numeroMovimiento,
+                    fechaMovimiento,
+                    tipoMovimiento,
+                    escaparCampo(motivo)));
+        }
+    }
+
+    private void guardarDetalleMovimiento(String numeroMovimiento, DetalleMovimientoData detalle,
+            int stockAnterior, int nuevoStock) throws IOException {
+        File archivoDet = new File(ARCHIVO_MOV_DET);
+        asegurarArchivoConEncabezado(archivoDet, ENCABEZADO_MOV_DET);
+
+        try (PrintWriter pwDet = new PrintWriter(new FileWriter(archivoDet, true))) {
+            pwDet.println(String.join(",",
+                    numeroMovimiento,
+                    String.valueOf(detalle.getCantidad()),
+                    escaparCampo(detalle.getClaveProducto())));
+        }
+    }
+
+    private void guardarMovimientoHistorial(String numeroMovimiento, String fechaMovimiento,
+            DetalleMovimientoData detalle, int stockAnterior, int nuevoStock) throws IOException {
+        File archivoHist = new File(ARCHIVO_MOV_HIST);
+        asegurarArchivoConEncabezado(archivoHist, ENCABEZADO_MOV_HIST);
+
+        try (PrintWriter pwHist = new PrintWriter(new FileWriter(archivoHist, true))) {
+            pwHist.println(String.join(",",
+                    numeroMovimiento,
+                    detalle.getClaveProducto(),
+                    escaparCampo(detalle.getNombreProducto()),
+                    escaparCampo(detalle.getTipoMovimiento()),
+                    fechaMovimiento,
+                    String.valueOf(detalle.getCantidad()),
+                    escaparCampo(detalle.getMotivo()),
+                    String.valueOf(stockAnterior),
+                    String.valueOf(nuevoStock)));
+        }
+    }
+
+    public String generarNumeroMovimiento() throws IOException {
+        File archivoEnc = new File(ARCHIVO_MOV_ENC);
+        if (!archivoEnc.exists()) {
+            return "1";
+        }
+        int ultimo = 0;
+        try (BufferedReader br = new BufferedReader(new FileReader(archivoEnc))) {
+            String linea;
+            while ((linea = br.readLine()) != null) {
+                String[] datos = linea.split(",", -1);
+                if (esEncabezadoMovimientoEnc(datos)) {
+                    continue;
+                }
+                if (datos.length > 0) {
+                    try {
+                        if (datos.length >= 7) {
+                            ultimo = Math.max(ultimo, Integer.parseInt(datos[0]));
+                        } else {
+                            ultimo = Math.max(ultimo, Integer.parseInt(datos[0]));
+                        }
+                    } catch (NumberFormatException ex) {
+                        // Ignorar valores dañados
+                    }
+                }
+            }
+        }
+        return String.valueOf(ultimo + 1);
+    }
+
+    public String[] obtenerResumenProducto(String claveProducto) throws IOException {
+        List<String[]> productos = leerProductos();
+        String[] producto = buscarProducto(productos, claveProducto);
+        if (producto == null) {
+            return null;
+        }
+        return new String[]{producto[0], producto[1], producto[3], producto[4], Boolean.parseBoolean(producto[9]) ? "Activo" : "Inactivo"};
+    }
+
+    public List<String[]> leerUltimosMovimientos() throws IOException {
+        List<String[]> movimientos = leerMovimientos();
+        movimientos.sort((a, b) -> compararNumeroMovimientoDesc(a[0], b[0]));
+        return movimientos;
+    }
+
+    private int compararNumeroMovimientoDesc(String numeroA, String numeroB) {
+        try {
+            return Integer.compare(Integer.parseInt(numeroB), Integer.parseInt(numeroA));
+        } catch (NumberFormatException ex) {
+            return numeroB.compareToIgnoreCase(numeroA);
+        }
+    }
+
+    private int compararNumeroMovimientoAsc(String numeroA, String numeroB) {
+        try {
+            return Integer.compare(Integer.parseInt(numeroA), Integer.parseInt(numeroB));
+        } catch (NumberFormatException ex) {
+            return numeroA.compareToIgnoreCase(numeroB);
+        }
+    }
+
+    private void normalizarArchivosMovimiento() throws IOException {
+        normalizarArchivoEncabezado();
+        normalizarArchivoDetalle();
+        normalizarArchivoHistorial();
+    }
+
+    private void normalizarArchivoConfiguracion() throws IOException {
+        File archivo = new File(ARCHIVO_CONFIG);
+        if (!archivo.exists()) {
+            try (PrintWriter pw = new PrintWriter(new FileWriter(archivo))) {
+                pw.println(ENCABEZADO_CONFIG);
+                pw.println(CONFIG_DEFAULT);
+            }
+            return;
+        }
+
+        List<String> lineas = Files.readAllLines(archivo.toPath());
+        List<String> resultado = new ArrayList<>();
+        resultado.add(ENCABEZADO_CONFIG);
+
+        boolean encontroDatos = false;
+        for (String linea : lineas) {
+            if (linea == null || linea.trim().isEmpty()) {
+                continue;
+            }
+            String[] datos = linea.split(",", -1);
+            if (esEncabezadoConfiguracion(datos)) {
+                continue;
+            }
+            if (datos.length >= 3 && !encontroDatos) {
+                resultado.add(String.join(",",
+                        String.valueOf(parsearDecimalSeguro(datos[0], 100.0)),
+                        String.valueOf(parsearDecimalSeguro(datos[1], 10.0)),
+                        String.valueOf(parsearEnteroSeguro(datos[2], 1))));
+                encontroDatos = true;
+            }
+        }
+
+        if (!encontroDatos) {
+            resultado.add(CONFIG_DEFAULT);
+        }
+
+        Files.write(archivo.toPath(), resultado);
+    }
+
+    private void normalizarArchivoEncabezado() throws IOException {
+        File archivo = new File(ARCHIVO_MOV_ENC);
+        if (!archivo.exists()) {
+            asegurarArchivoConEncabezado(archivo, ENCABEZADO_MOV_ENC);
+            return;
+        }
+
+        List<String> lineasOriginales = Files.readAllLines(archivo.toPath());
+        List<String> lineasNormalizadas = new ArrayList<>();
+        lineasNormalizadas.add(ENCABEZADO_MOV_ENC);
+
+        for (String linea : lineasOriginales) {
+            if (linea == null || linea.trim().isEmpty()) {
+                continue;
+            }
+            String[] datos = linea.split(",", -1);
+            if (esEncabezadoMovimientoEnc(datos)) {
+                continue;
+            }
+            if (datos.length >= 7) {
+                if (esFilaEncabezadoOrdenViejo(datos)) {
+                    lineasNormalizadas.add(String.join(",",
+                            datos[3],
+                            datos[0],
+                            datos[1],
+                            datos[4]));
+                } else if (esFilaEncabezadoOrdenActual(datos)) {
+                    lineasNormalizadas.add(String.join(",",
+                            datos[0],
+                            datos[2],
+                            datos[3],
+                            datos[4]));
+                } else {
+                    lineasNormalizadas.add(String.join(",",
+                            datos[0],
+                            datos[1],
+                            datos[2],
+                            datos[3]));
+                }
+            } else if (datos.length >= 4) {
+                lineasNormalizadas.add(String.join(",",
+                        datos[0],
+                        datos[1],
+                        datos[2],
+                        datos[3]));
+            }
+        }
+
+        LinkedHashMap<String, String> movimientosUnicos = new LinkedHashMap<>();
+        for (int i = 1; i < lineasNormalizadas.size(); i++) {
+            String linea = lineasNormalizadas.get(i);
+            String[] datos = linea.split(",", -1);
+            if (datos.length >= 4 && !movimientosUnicos.containsKey(datos[0])) {
+                movimientosUnicos.put(datos[0], String.join(",",
+                        datos[0],
+                        datos[1],
+                        datos[2],
+                        datos[3]));
+            }
+        }
+
+        List<String> resultado = new ArrayList<>();
+        resultado.add(ENCABEZADO_MOV_ENC);
+        resultado.addAll(movimientosUnicos.values());
+        Files.write(archivo.toPath(), resultado);
+    }
+
+    private void normalizarArchivoDetalle() throws IOException {
+        File archivo = new File(ARCHIVO_MOV_DET);
+        if (!archivo.exists()) {
+            asegurarArchivoConEncabezado(archivo, ENCABEZADO_MOV_DET);
+            return;
+        }
+
+        List<String> lineasOriginales = Files.readAllLines(archivo.toPath());
+        List<String> lineasNormalizadas = new ArrayList<>();
+        lineasNormalizadas.add(ENCABEZADO_MOV_DET);
+
+        for (String linea : lineasOriginales) {
+            if (linea == null || linea.trim().isEmpty()) {
+                continue;
+            }
+            String[] datos = linea.split(",", -1);
+            if (esEncabezadoMovimientoDet(datos)) {
+                continue;
+            }
+            if (datos.length >= 6) {
+                lineasNormalizadas.add(String.join(",",
+                        datos[0],
+                        datos[3],
+                        escaparCampo(datos[1])));
+            } else if (datos.length >= 4) {
+                String claveReconstruida = esClaveProducto(leerProductos(), datos[2]) ? datos[2] : buscarClavePorNombre(leerProductos(), datos[2]);
+                lineasNormalizadas.add(String.join(",",
+                        datos[0],
+                        datos[1],
+                        escaparCampo(claveReconstruida)));
+            } else if (datos.length >= 3) {
+                String claveReconstruida = esClaveProducto(leerProductos(), datos[2]) ? datos[2] : buscarClavePorNombre(leerProductos(), datos[2]);
+                lineasNormalizadas.add(String.join(",",
+                        datos[0],
+                        datos[1],
+                        escaparCampo(claveReconstruida)));
+            } else if (datos.length >= 2) {
+                String claveReconstruida = esClaveProducto(leerProductos(), datos[1]) ? datos[1] : buscarClavePorNombre(leerProductos(), datos[1]);
+                lineasNormalizadas.add(String.join(",",
+                        "",
+                        datos[0],
+                        escaparCampo(claveReconstruida)));
+            }
+        }
+
+        Files.write(archivo.toPath(), lineasNormalizadas);
+    }
+
+    private void normalizarArchivoHistorial() throws IOException {
+        File archivo = new File(ARCHIVO_MOV_HIST);
+        if (!archivo.exists()) {
+            asegurarArchivoConEncabezado(archivo, ENCABEZADO_MOV_HIST);
+        } else {
+            asegurarArchivoConEncabezado(archivo, ENCABEZADO_MOV_HIST);
+        }
+
+        List<String[]> movimientosReconstruidos = leerMovimientosReconstruidos();
+        List<String> lineasExistentes = Files.readAllLines(archivo.toPath());
+        LinkedHashMap<String, String> filasHistorial = new LinkedHashMap<>();
+
+        List<String[]> movimientosOrdenados = new ArrayList<>(movimientosReconstruidos);
+        movimientosOrdenados.sort((a, b) -> {
+            int comparacionNumero = compararNumeroMovimientoAsc(a[0], b[0]);
+            if (comparacionNumero != 0) {
+                return comparacionNumero;
+            }
+            return a[1].compareToIgnoreCase(b[1]);
+        });
+
+        for (String[] movimiento : movimientosOrdenados) {
+            if (movimiento.length < 9) {
+                continue;
+            }
+            String fila = String.join(",",
+                    movimiento[0],
+                    escaparCampo(movimiento[1]),
+                    escaparCampo(movimiento[2]),
+                    escaparCampo(movimiento[3]),
+                    movimiento[4],
+                    movimiento[5],
+                    escaparCampo(movimiento[6]),
+                    movimiento[7],
+                    movimiento[8]);
+            filasHistorial.put(generarLlaveHistorial(movimiento), fila);
+        }
+
+        for (String linea : lineasExistentes) {
+            if (linea == null || linea.trim().isEmpty()) {
+                continue;
+            }
+            String[] datos = linea.split(",", -1);
+            if (esEncabezadoMovimientoHist(datos) || datos.length < 9) {
+                continue;
+            }
+            filasHistorial.putIfAbsent(generarLlaveHistorial(datos), String.join(",",
+                    datos[0],
+                    escaparCampo(datos[1]),
+                    escaparCampo(datos[2]),
+                    escaparCampo(datos[3]),
+                    datos[4],
+                    datos[5],
+                    escaparCampo(datos[6]),
+                    datos[7],
+                    datos[8]));
+        }
+
+        List<String> resultado = new ArrayList<>();
+        resultado.add(ENCABEZADO_MOV_HIST);
+        resultado.addAll(filasHistorial.values());
+        Files.write(archivo.toPath(), resultado);
+    }
+
+    private void asegurarArchivoConEncabezado(File archivo, String encabezado) throws IOException {
+        if (!archivo.exists()) {
+            try (PrintWriter pw = new PrintWriter(new FileWriter(archivo))) {
+                pw.println(encabezado);
+            }
+            return;
+        }
+
+        List<String> lineas = Files.readAllLines(archivo.toPath());
+        if (lineas.isEmpty()) {
+            Files.write(archivo.toPath(), Collections.singletonList(encabezado));
+            return;
+        }
+
+        List<String> nuevasLineas = new ArrayList<>();
+        nuevasLineas.add(encabezado);
+
+        for (String linea : lineas) {
+            if (linea == null || linea.trim().isEmpty()) {
+                continue;
+            }
+            if (linea.trim().equalsIgnoreCase(encabezado.trim())) {
+                continue;
+            }
+            nuevasLineas.add(linea);
+        }
+
+        Files.write(archivo.toPath(), nuevasLineas);
+    }
+
+    private boolean esEncabezadoMovimientoEnc(String[] datos) {
+        if (datos.length == 0) {
+            return false;
+        }
+        String primeraColumna = limpiarCeldaEncabezado(datos[0]);
+        return "No. movimiento".equalsIgnoreCase(primeraColumna)
+                || "Codigo".equalsIgnoreCase(primeraColumna)
+                || "Fecha".equalsIgnoreCase(primeraColumna);
+    }
+
+    private boolean esEncabezadoMovimientoDet(String[] datos) {
+        if (datos.length == 0) {
+            return false;
+        }
+        String primeraColumna = limpiarCeldaEncabezado(datos[0]);
+        return "Cantidad".equalsIgnoreCase(primeraColumna)
+                || "No. movimiento".equalsIgnoreCase(primeraColumna);
+    }
+
+    private boolean esEncabezadoMovimientoHist(String[] datos) {
+        if (datos.length == 0) {
+            return false;
+        }
+        String primeraColumna = limpiarCeldaEncabezado(datos[0]);
+        return "No. movimiento".equalsIgnoreCase(primeraColumna)
+                || "Clave".equalsIgnoreCase(primeraColumna);
+    }
+
+    private boolean esEncabezadoConfiguracion(String[] datos) {
+        if (datos.length == 0) {
+            return false;
+        }
+        String primeraColumna = limpiarCeldaEncabezado(datos[0]);
+        return "Costo pedido".equalsIgnoreCase(primeraColumna);
+    }
+
+    private boolean esFilaEncabezadoOrdenViejo(String[] datos) {
+        return datos.length >= 7
+                && datos[0].matches("\\d{4}-\\d{2}-\\d{2}")
+                && ("Entrada".equalsIgnoreCase(datos[1])
+                || "Salida".equalsIgnoreCase(datos[1])
+                || "Ajuste".equalsIgnoreCase(datos[1]));
+    }
+
+    private boolean esFilaEncabezadoOrdenActual(String[] datos) {
+        return datos.length >= 7
+                && datos[0].trim().matches("\\d+")
+                && datos[2].matches("\\d{4}-\\d{2}-\\d{2}")
+                && ("Entrada".equalsIgnoreCase(datos[3])
+                || "Salida".equalsIgnoreCase(datos[3])
+                || "Ajuste".equalsIgnoreCase(datos[3]));
+    }
+
+    private String limpiarCeldaEncabezado(String valor) {
+        return valor == null ? "" : valor.replace("\uFEFF", "").trim();
+    }
+
+    private double parsearDecimalSeguro(String valor, double porDefecto) {
+        try {
+            return Double.parseDouble((valor == null ? "" : valor.trim()).replace(",", "."));
+        } catch (NumberFormatException ex) {
+            return porDefecto;
+        }
+    }
+
+    private int parsearEnteroSeguro(String valor, int porDefecto) {
+        try {
+            return Integer.parseInt(valor == null ? "" : valor.trim());
+        } catch (NumberFormatException ex) {
+            return porDefecto;
+        }
+    }
+
+    private String generarLlaveHistorial(String[] datos) {
+        return String.join("||",
+                datos.length > 0 ? datos[0].trim() : "",
+                datos.length > 1 ? datos[1].trim() : "",
+                datos.length > 2 ? datos[2].trim() : "",
+                datos.length > 3 ? datos[3].trim() : "",
+                datos.length > 4 ? datos[4].trim() : "",
+                datos.length > 5 ? datos[5].trim() : "",
+                datos.length > 6 ? datos[6].trim() : "",
+                datos.length > 7 ? datos[7].trim() : "",
+                datos.length > 8 ? datos[8].trim() : "");
+    }
+
+    private String obtenerCodigoProducto(String claveProducto, List<String[]> productos) {
+        for (int i = 0; i < productos.size(); i++) {
+            if (productos.get(i)[0].equalsIgnoreCase(claveProducto)) {
+                return String.valueOf(i + 1);
+            }
+        }
+        return "";
+    }
+
+    private void guardarMovimientoPlanoCompatibilidad(MovimientoData movimiento, int stockAnterior, int nuevoStock) throws IOException {
+        File archivo = new File("movimientos_inventario.csv");
+        if (!archivo.exists()) {
+            archivo.createNewFile();
+        }
+        try (PrintWriter pw = new PrintWriter(new FileWriter(archivo, true))) {
+            pw.println(String.join(",",
+                    movimiento.getClaveProducto(),
+                    movimiento.getNombreProducto(),
+                    movimiento.getTipoMovimiento(),
+                    movimiento.getFechaMovimiento(),
+                    String.valueOf(movimiento.getCantidad()),
+                    escaparCampo(movimiento.getMotivo()),
+                    String.valueOf(stockAnterior),
+                    String.valueOf(nuevoStock)));
+        }
+    }
+
+    private String escaparCampo(String valor) {
+        return valor.replace(",", " ");
+    }
+
+    private String[] buscarProducto(List<String[]> productos, String claveProducto) {
+        for (String[] producto : productos) {
+            if (producto[0].equalsIgnoreCase(claveProducto)) {
+                return producto;
+            }
+        }
+        return null;
+    }
+
+    private String buscarClavePorNombre(List<String[]> productos, String nombreProducto) {
+        if (nombreProducto == null) {
+            return "";
+        }
+        for (String[] producto : productos) {
+            if (producto[1].equalsIgnoreCase(nombreProducto.trim())) {
+                return producto[0];
+            }
+        }
+        return "";
+    }
+
+    private String buscarNombrePorClave(List<String[]> productos, String claveProducto, String valorAlterno) {
+        if (claveProducto != null && !claveProducto.isBlank()) {
+            String[] producto = buscarProducto(productos, claveProducto);
+            if (producto != null) {
+                return producto[1];
+            }
+        }
+        return valorAlterno == null ? "" : valorAlterno;
+    }
+
+    private boolean esClaveProducto(List<String[]> productos, String valor) {
+        if (valor == null || valor.isBlank()) {
+            return false;
+        }
+        return buscarProducto(productos, valor.trim()) != null;
     }
 
     public static class DatosProductoFormulario {
@@ -281,5 +1262,75 @@ public class ControlandoInventario {
                 return ResultadoValidacion.error(campo, mensaje);
             }
         }
+    }
+
+    public static class MovimientoData {
+
+        private final String claveProducto;
+        private final String nombreProducto;
+        private final String tipoMovimiento;
+        private final int cantidad;
+        private final String fechaMovimiento;
+        private final String motivo;
+        private final String numeroMovimiento;
+
+        public MovimientoData(String claveProducto, String nombreProducto, String tipoMovimiento, int cantidad,
+                String fechaMovimiento, String motivo, String numeroMovimiento) {
+            this.claveProducto = claveProducto;
+            this.nombreProducto = nombreProducto;
+            this.tipoMovimiento = tipoMovimiento;
+            this.cantidad = cantidad;
+            this.fechaMovimiento = fechaMovimiento;
+            this.motivo = motivo;
+            this.numeroMovimiento = numeroMovimiento;
+        }
+
+        public String getClaveProducto() { return claveProducto; }
+        public String getNombreProducto() { return nombreProducto; }
+        public String getTipoMovimiento() { return tipoMovimiento; }
+        public int getCantidad() { return cantidad; }
+        public String getFechaMovimiento() { return fechaMovimiento; }
+        public String getMotivo() { return motivo; }
+        public String getNumeroMovimiento() { return numeroMovimiento; }
+    }
+
+    public static class DetalleMovimientoData {
+
+        private final String claveProducto;
+        private final String nombreProducto;
+        private final int cantidad;
+        private final String tipoMovimiento;
+        private final String motivo;
+
+        public DetalleMovimientoData(String claveProducto, String nombreProducto, int cantidad, String tipoMovimiento, String motivo) {
+            this.claveProducto = claveProducto;
+            this.nombreProducto = nombreProducto;
+            this.cantidad = cantidad;
+            this.tipoMovimiento = tipoMovimiento == null ? "" : tipoMovimiento;
+            this.motivo = motivo == null ? "" : motivo;
+        }
+
+        public String getClaveProducto() { return claveProducto; }
+        public String getNombreProducto() { return nombreProducto; }
+        public int getCantidad() { return cantidad; }
+        public String getTipoMovimiento() { return tipoMovimiento; }
+        public String getMotivo() { return motivo; }
+    }
+
+    public static class ParametrosAnalisis {
+
+        private final double costoPedido;
+        private final double h;
+        private final int diasEntregaGlobal;
+
+        public ParametrosAnalisis(double costoPedido, double h, int diasEntregaGlobal) {
+            this.costoPedido = costoPedido;
+            this.h = h <= 0 ? 1.0 : h;
+            this.diasEntregaGlobal = diasEntregaGlobal <= 0 ? 1 : diasEntregaGlobal;
+        }
+
+        public double getCostoPedido() { return costoPedido; }
+        public double getH() { return h; }
+        public int getDiasEntregaGlobal() { return diasEntregaGlobal; }
     }
 }

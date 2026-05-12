@@ -951,6 +951,11 @@ public class PanelCatalogo extends JPanel {
         limpiarFormulario();
     }
 
+    public void recargarProductosDesdeArchivo() {
+        cargarProductos();
+        aplicarFiltros();
+    }
+
     public void cargarProductoEnFormulario(String[] datos) {
         if (datos == null || datos.length < 9) {
             return;
