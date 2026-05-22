@@ -1,28 +1,76 @@
 No. movimiento,Clave,Producto,Tipo,Fecha,Cantidad,Motivo,Stock antes,Stock despues
 1,B455,Monitor portatil,Entrada,2026-05-06,9,,24,33
 1,C908,Camara,Entrada,2026-05-06,8,,-8,0
-2,A109,Mouse Logitech,Entrada,2026-05-07,1,,19,20
+2,A109,Mouse Logitech,Entrada,2026-05-07,1,,,
 2,A123,Monitor hp,Entrada,2026-05-07,5,,,
 2,A124,Laptop Hp,Entrada,2026-05-07,1,,34,35
-3,A123,Monitor hp,Ajuste,2026-05-07,1,Se esgta acabando,,-1
+3,A123,Monitor hp,Ajuste,2026-05-07,1,Se esgta acabando,,
 4,4524,hola buenas tardes me llamaoo cinthia,Entrada,2026-05-07,1,,30,31
-4,A109,Mouse Logitech,Entrada,2026-05-07,1,,20,21
+4,A109,Mouse Logitech,Entrada,2026-05-07,1,,,
 5,4524,hola buenas tardes me llamaoo cinthia,Entrada,2026-05-07,30,,31,61
+5,A109,Mouse Logitech,Entrada,2026-05-07,15,,,
+6,A109,Mouse Logitech,Entrada,2026-05-07,30,,,
+6,A123,Monitor hp,Entrada,2026-05-07,1,,,
+7,4524,hola buenas tardes me llamaoo cinthia,Entrada,2026-05-07,1,,61,62
+7,A109,Mouse Logitech,Entrada,2026-05-07,1,,,
+8,A109,Mouse Logitech,Salida,2026-05-07,5,ES UNA SALIDA,,
+8,A123,Monitor hp,Salida,2026-05-07,1,ES UNA SALIDA,,
+9,A109,Mouse Logitech,Entrada,2026-05-07,1,,,
+9,A123,Monitor hp,Entrada,2026-05-07,2,,,
+10,4524,hola buenas tardes me llamaoo cinthia,Salida,2026-05-07,12,salida 3,62,50
+10,A109,Mouse Logitech,Salida,2026-05-07,5,salida 3,,
+11,A123,Monitor hp,Entrada,2026-05-08,2,,,
+12,A123,Monitor hp,Entrada,2026-05-12,3,,,
+12,A125,TECLADOS,Entrada,2026-05-12,1,,,
+12,C908,Camara,Entrada,2026-05-12,13,,0,13
+13,A123,Monitor hp,Ajuste,2026-05-12,1,asd,,
+14,A109,Mouse Logitech,Entrada,2026-05-12,1,,,
+14,A123,Monitor hp,Entrada,2026-05-12,1,,,
+15,A109,Mouse Logitech,Ajuste,2026-05-12,2,obligatorio,,
+15,A123,Monitor hp,Ajuste,2026-05-12,10,obligatorio,,
+15,A125,TECLADOS,Ajuste,2026-05-12,1,obligatorio,,1
+16,A109,Mouse Logitech,Ajuste,2026-05-12,1,nuevo obligacion,,
+17,A123,Monitor hp,Entrada,2026-05-13,1,,,
+18,A109,Mouse Logitech,Ajuste,2026-05-13,10,Prueba,,22
+18,A123,Monitor hp,Ajuste,2026-05-13,10,Prueba,,10
+19,C908,Camara,Salida,2026-05-19,6,,13,7
+20,A109,Mouse Logitech,Entrada,2026-05-20,16,,22,38
+21,A109,Mouse Logitech,Salida,2026-05-20,4,,32,28
+21,A109,Mouse Logitech,Salida,2026-05-20,6,,38,32
+22,4524,hola buenas tardes me llamaoo cinthia,Salida,2026-05-20,50,,50,0
+18,A109,Mouse Logitech,Ajuste,2026-05-13,10,Prueba,,10
+15,A123,Monitor hp,Ajuste,2026-05-12,10,obligatorio,,10
+16,A109,Mouse Logitech,Ajuste,2026-05-12,1,nuevo obligacion,,1
+15,A109,Mouse Logitech,Ajuste,2026-05-12,2,obligatorio,,61
+2,A109,Mouse Logitech,Entrada,2026-05-07,1,,19,20
+3,A123,Monitor hp,Ajuste,2026-05-07,1,Se esgta acabando,,-1
+4,A109,Mouse Logitech,Entrada,2026-05-07,1,,20,21
 5,A109,Mouse Logitech,Entrada,2026-05-07,15,,21,36
 6,A109,Mouse Logitech,Entrada,2026-05-07,30,,36,66
 6,A123,Monitor hp,Entrada,2026-05-07,1,,-1,0
-7,4524,hola buenas tardes me llamaoo cinthia,Entrada,2026-05-07,1,,61,62
 7,A109,Mouse Logitech,Entrada,2026-05-07,1,,66,67
 8,A109,Mouse Logitech,Salida,2026-05-07,5,ES UNA SALIDA,67,62
 8,A123,Monitor hp,Salida,2026-05-07,1,ES UNA SALIDA,0,-1
 9,A109,Mouse Logitech,Entrada,2026-05-07,1,,62,63
 9,A123,Monitor hp,Entrada,2026-05-07,2,,-1,1
-10,4524,hola buenas tardes me llamaoo cinthia,Salida,2026-05-07,12,salida 3,62,50
 10,A109,Mouse Logitech,Salida,2026-05-07,5,salida 3,63,58
 11,A123,Monitor hp,Entrada,2026-05-08,2,,1,3
 12,A123,Monitor hp,Entrada,2026-05-12,3,,3,6
 12,A125,TECLADOS,Entrada,2026-05-12,1,,-1,0
-12,C908,Camara,Entrada,2026-05-12,13,,0,13
 1,C908,Camara,Entrada,2026-05-06,8,,20,28
 12,A125,TECLADOS,Salida,2026-05-12,1,,1,0
 12,C908,Camara,Ajuste,2026-05-12,13,Se agrgaron nuevos,28,13
+13,A123,Monitor hp,Ajuste,2026-05-12,1,asd,6,1
+14,A109,Mouse Logitech,Entrada,2026-05-12,1,,58,59
+14,A123,Monitor hp,Entrada,2026-05-12,1,,1,2
+15,A123,Monitor hp,Ajuste,2026-05-12,10,obligatorio,2,10
+15,A109,Mouse Logitech,Entrada,2026-05-12,2,,59,61
+15,A125,TECLADOS,Entrada,2026-05-12,1,,0,1
+16,A109,Mouse Logitech,Ajuste,2026-05-12,1,nuevo obligacion,61,1
+17,A123,Monitor hp,Entrada,2026-05-13,1,,10,11
+18,A123,Monitor hp,Ajuste,2026-05-13,10,Prueba,11,10
+18,A109,Mouse Logitech,Ajuste,2026-05-13,10,Prueba,1,10
+20,A109,Mouse Logitech,Entrada,2026-05-20,16,,10,26
+21,A109,Mouse Logitech,Salida,2026-05-20,4,,26,22
+21,A109,Mouse Logitech,Entrada,2026-05-20,6,,22,28
+23,E459,Monitor  HP dual,Salida,2026-05-22,33,,33,0

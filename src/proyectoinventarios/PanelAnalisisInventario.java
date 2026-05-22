@@ -4,10 +4,15 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
+import java.awt.Dialog;
 import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.RenderingHints;
+import java.awt.Rectangle;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
@@ -23,12 +28,15 @@ import java.util.Set;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
+import javax.swing.JButton;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
+import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JPanel;
+import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.JTextField;
@@ -43,6 +51,15 @@ import javax.swing.plaf.basic.BasicScrollBarUI;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableRowSorter;
+import org.jfree.chart.ChartFactory;
+import org.jfree.chart.ChartPanel;
+import org.jfree.chart.JFreeChart;
+import org.jfree.chart.labels.StandardCategoryItemLabelGenerator;
+import org.jfree.chart.plot.CategoryPlot;
+import org.jfree.chart.plot.PlotOrientation;
+import org.jfree.chart.renderer.category.BarRenderer;
+import org.jfree.chart.renderer.category.StandardBarPainter;
+import org.jfree.data.category.DefaultCategoryDataset;
 
 public class PanelAnalisisInventario extends JPanel {
 
@@ -55,11 +72,13 @@ public class PanelAnalisisInventario extends JPanel {
     private JLabel lblEstadoConsumo;
     private JTextField txtBuscar;
     private JComboBox<String> comboCategoria;
+    private JButton btnGrafica;
     private JTable tablaAnalisis;
     private JTable tablaDetalle;
     private DefaultTableModel modeloAnalisis;
     private DefaultTableModel modeloDetalle;
     private TableRowSorter<DefaultTableModel> sorterAnalisis;
+    private String mensajeDetalle = "";
 
     public PanelAnalisisInventario() {
         setLayout(new BorderLayout(0, 20));
@@ -142,6 +161,7 @@ public class PanelAnalisisInventario extends JPanel {
         gbc.weightx = 1.0;
 
         txtBuscar = crearCampo();
+        btnGrafica = crearBotonAccion("Grafica");
         comboCategoria = new JComboBox<>();
         estilizarCombo(comboCategoria);
         comboCategoria.addItem("Todas las categorias");
@@ -149,7 +169,12 @@ public class PanelAnalisisInventario extends JPanel {
             comboCategoria.addItem(categoria);
         }
 
-        agregarCampo(filtros, crearCampoPanel("Buscar por codigo o nombre", txtBuscar), gbc, 0, 0);
+        JPanel panelBusqueda = new JPanel(new BorderLayout(10, 0));
+        panelBusqueda.setOpaque(false);
+        panelBusqueda.add(txtBuscar, BorderLayout.CENTER);
+        panelBusqueda.add(btnGrafica, BorderLayout.EAST);
+
+        agregarCampo(filtros, crearCampoPanel("Buscar por codigo o nombre", panelBusqueda), gbc, 0, 0);
         agregarCampo(filtros, crearCampoPanel("Filtrar por categoria", comboCategoria), gbc, 1, 0);
 
         txtBuscar.getDocument().addDocumentListener(new DocumentListener() {
@@ -170,6 +195,7 @@ public class PanelAnalisisInventario extends JPanel {
         });
 
         comboCategoria.addActionListener(evt -> aplicarFiltros());
+        btnGrafica.addActionListener(evt -> mostrarGraficaGrupos());
 
         contenedor.add(parametros, BorderLayout.WEST);
         contenedor.add(filtros, BorderLayout.CENTER);
@@ -191,18 +217,18 @@ public class PanelAnalisisInventario extends JPanel {
 
         tablaAnalisis = new JTable(modeloAnalisis);
         configurarTabla(tablaAnalisis);
-        tablaAnalisis.getColumnModel().getColumn(0).setPreferredWidth(70);
-        tablaAnalisis.getColumnModel().getColumn(0).setMaxWidth(80);
+        tablaAnalisis.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+        tablaAnalisis.getTableHeader().setReorderingAllowed(false);
+        tablaAnalisis.getTableHeader().setResizingAllowed(false);
+        tablaAnalisis.getColumnModel().getColumn(0).setPreferredWidth(80);
         tablaAnalisis.getColumnModel().getColumn(1).setPreferredWidth(95);
-        tablaAnalisis.getColumnModel().getColumn(1).setMaxWidth(110);
+        tablaAnalisis.getColumnModel().getColumn(2).setPreferredWidth(220);
+        tablaAnalisis.getColumnModel().getColumn(3).setPreferredWidth(150);
         tablaAnalisis.getColumnModel().getColumn(4).setPreferredWidth(95);
-        tablaAnalisis.getColumnModel().getColumn(4).setMaxWidth(110);
-        tablaAnalisis.getColumnModel().getColumn(5).setPreferredWidth(95);
-        tablaAnalisis.getColumnModel().getColumn(5).setMaxWidth(105);
-        tablaAnalisis.getColumnModel().getColumn(6).setPreferredWidth(125);
-        tablaAnalisis.getColumnModel().getColumn(6).setMaxWidth(145);
+        tablaAnalisis.getColumnModel().getColumn(5).setPreferredWidth(105);
+        tablaAnalisis.getColumnModel().getColumn(6).setPreferredWidth(135);
         tablaAnalisis.getColumnModel().getColumn(7).setPreferredWidth(95);
-        tablaAnalisis.getColumnModel().getColumn(7).setMaxWidth(110);
+        tablaAnalisis.getColumnModel().getColumn(8).setPreferredWidth(180);
 
         sorterAnalisis = new TableRowSorter<>(modeloAnalisis);
         tablaAnalisis.setRowSorter(sorterAnalisis);
@@ -218,11 +244,11 @@ public class PanelAnalisisInventario extends JPanel {
 
         JPanel panelAnalisis = crearCard();
         panelAnalisis.setLayout(new BorderLayout(0, 8));
-        panelAnalisis.add(crearTituloSeccion("Productos y analisis ABC"), BorderLayout.NORTH);
+        panelAnalisis.add(crearTituloSeccion("Productos"), BorderLayout.NORTH);
         panelAnalisis.add(scrollAnalisis, BorderLayout.CENTER);
 
         modeloDetalle = new DefaultTableModel(new String[]{
-            "Fecha", "No. movimiento", "Cantidad", "Motivo", "Stock antes", "Stock despues"
+            "Fecha", "No. movimiento", "Cantidad", "Tipo de movimiento", "Stock antes", "Stock despues"
         }, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -230,18 +256,43 @@ public class PanelAnalisisInventario extends JPanel {
             }
         };
 
-        tablaDetalle = new JTable(modeloDetalle);
+        tablaDetalle = new JTable(modeloDetalle) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                if (getRowCount() == 0 && mensajeDetalle != null && !mensajeDetalle.isBlank()) {
+                    Graphics2D g2 = (Graphics2D) g.create();
+                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+                    int ancho = Math.min(getWidth() - 40, 360);
+                    int alto = 42;
+                    int x = Math.max(20, (getWidth() - ancho) / 2);
+                    int y = Math.max(16, (getHeight() - alto) / 2);
+
+                    g2.setColor(new Color(255, 247, 237));
+                    g2.fillRoundRect(x, y, ancho, alto, 14, 14);
+                    g2.setColor(new Color(253, 230, 138));
+                    g2.drawRoundRect(x, y, ancho, alto, 14, 14);
+                    g2.setColor(new Color(146, 64, 14));
+                    g2.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+
+                    java.awt.FontMetrics fm = g2.getFontMetrics();
+                    int textoX = x + 12;
+                    int textoY = y + ((alto - fm.getHeight()) / 2) + fm.getAscent();
+                    g2.drawString(mensajeDetalle, textoX, textoY);
+                    g2.dispose();
+                }
+            }
+        };
         configurarTabla(tablaDetalle);
-        tablaDetalle.getColumnModel().getColumn(0).setPreferredWidth(110);
-        tablaDetalle.getColumnModel().getColumn(0).setMaxWidth(125);
-        tablaDetalle.getColumnModel().getColumn(1).setPreferredWidth(105);
-        tablaDetalle.getColumnModel().getColumn(1).setMaxWidth(120);
-        tablaDetalle.getColumnModel().getColumn(2).setPreferredWidth(85);
-        tablaDetalle.getColumnModel().getColumn(2).setMaxWidth(95);
-        tablaDetalle.getColumnModel().getColumn(4).setPreferredWidth(95);
-        tablaDetalle.getColumnModel().getColumn(4).setMaxWidth(110);
-        tablaDetalle.getColumnModel().getColumn(5).setPreferredWidth(105);
-        tablaDetalle.getColumnModel().getColumn(5).setMaxWidth(120);
+        tablaDetalle.getTableHeader().setReorderingAllowed(false);
+        tablaDetalle.getTableHeader().setResizingAllowed(false);
+        tablaDetalle.getColumnModel().getColumn(0).setPreferredWidth(135);
+        tablaDetalle.getColumnModel().getColumn(1).setPreferredWidth(145);
+        tablaDetalle.getColumnModel().getColumn(2).setPreferredWidth(120);
+        tablaDetalle.getColumnModel().getColumn(3).setPreferredWidth(185);
+        tablaDetalle.getColumnModel().getColumn(4).setPreferredWidth(130);
+        tablaDetalle.getColumnModel().getColumn(5).setPreferredWidth(140);
 
         JScrollPane scrollDetalle = new JScrollPane(tablaDetalle);
         scrollDetalle.setBorder(BorderFactory.createLineBorder(new Color(203, 213, 225)));
@@ -250,7 +301,7 @@ public class PanelAnalisisInventario extends JPanel {
 
         JPanel panelDetalle = crearCard();
         panelDetalle.setLayout(new BorderLayout(0, 8));
-        panelDetalle.add(crearTituloSeccion("Detalle de consumo (solo salidas)"), BorderLayout.NORTH);
+        panelDetalle.add(crearTituloSeccion("Detalle de consumo"), BorderLayout.NORTH);
         panelDetalle.add(scrollDetalle, BorderLayout.CENTER);
 
         contenedor.add(panelAnalisis, BorderLayout.CENTER);
@@ -266,6 +317,7 @@ public class PanelAnalisisInventario extends JPanel {
             lblEstadoConsumo.setText("No fue posible cargar el analisis.");
             modeloAnalisis.setRowCount(0);
             modeloDetalle.setRowCount(0);
+            ocultarEstadoDetalle();
         }
     }
 
@@ -368,14 +420,15 @@ public class PanelAnalisisInventario extends JPanel {
         for (String[] producto : productosOrdenados) {
             String clave = producto[0];
             double consumoProducto = consumoPorProducto.getOrDefault(clave, 0.0);
-            acumulado += consumoProducto / consumoTotal;
-            if (acumulado < 0.80) {
+            double acumuladoPrevio = acumulado;
+            if (acumuladoPrevio < 0.80) {
                 clasificacion.put(clave, "A");
-            } else if (acumulado < 0.95) {
+            } else if (acumuladoPrevio < 0.95) {
                 clasificacion.put(clave, "B");
             } else {
                 clasificacion.put(clave, "C");
             }
+            acumulado += consumoProducto / consumoTotal;
         }
         return clasificacion;
     }
@@ -394,7 +447,9 @@ public class PanelAnalisisInventario extends JPanel {
                 String nombre = entry.getStringValue(2).toLowerCase(Locale.ROOT);
                 String categoriaFila = entry.getStringValue(3);
 
-                boolean coincideTexto = texto.isEmpty() || codigo.contains(texto) || nombre.contains(texto);
+                boolean coincideTexto = texto.isEmpty()
+                        || codigo.startsWith(texto)
+                        || nombre.startsWith(texto);
                 boolean coincideCategoria = "Todas las categorias".equalsIgnoreCase(categoria) || categoria.equalsIgnoreCase(categoriaFila);
                 return coincideTexto && coincideCategoria;
             }
@@ -410,6 +465,7 @@ public class PanelAnalisisInventario extends JPanel {
 
     private void cargarDetalleConsumo() {
         modeloDetalle.setRowCount(0);
+        ocultarEstadoDetalle();
         int filaVista = tablaAnalisis.getSelectedRow();
         if (filaVista < 0) {
             return;
@@ -419,22 +475,141 @@ public class PanelAnalisisInventario extends JPanel {
 
         try {
             List<String[]> movimientos = control.leerMovimientosPorClave(clave);
+            boolean haySalidas = false;
             for (String[] movimiento : movimientos) {
                 if (!"Salida".equalsIgnoreCase(movimiento[3])) {
                     continue;
                 }
+                haySalidas = true;
                 modeloDetalle.addRow(new Object[]{
                     movimiento[4],
                     movimiento[0],
                     movimiento[5],
-                    movimiento[6],
+                    movimiento[3],
                     movimiento[7],
                     movimiento[8]
                 });
             }
+            if (!haySalidas) {
+                mostrarEstadoDetalle("Este producto no tiene salidas registradas.");
+            }
         } catch (Exception ex) {
             modeloDetalle.setRowCount(0);
+            mostrarEstadoDetalle("No fue posible cargar el historial de consumo.");
         }
+    }
+
+    private void mostrarEstadoDetalle(String mensaje) {
+        mensajeDetalle = mensaje;
+        if (tablaDetalle != null) {
+            tablaDetalle.repaint();
+        }
+    }
+
+    private void ocultarEstadoDetalle() {
+        mensajeDetalle = "";
+        if (tablaDetalle != null) {
+            tablaDetalle.repaint();
+        }
+    }
+
+    private void mostrarGraficaGrupos() {
+        DefaultCategoryDataset dataset = new DefaultCategoryDataset();
+        int grupoA = 0;
+        int grupoB = 0;
+        int grupoC = 0;
+
+        for (String[] fila : analisisActual) {
+            if (fila.length == 0) {
+                continue;
+            }
+            String grupo = fila[0];
+            if ("A".equalsIgnoreCase(grupo)) {
+                grupoA++;
+            } else if ("B".equalsIgnoreCase(grupo)) {
+                grupoB++;
+            } else if ("C".equalsIgnoreCase(grupo)) {
+                grupoC++;
+            }
+        }
+
+        dataset.addValue(grupoA, "Productos", "A");
+        dataset.addValue(grupoB, "Productos", "B");
+        dataset.addValue(grupoC, "Productos", "C");
+
+        JFreeChart chart = ChartFactory.createBarChart(
+                "Grupos ABC",
+                "Grupo",
+                "Productos",
+                dataset,
+                PlotOrientation.VERTICAL,
+                false,
+                true,
+                false);
+
+        chart.setBackgroundPaint(Color.WHITE);
+        chart.getTitle().setFont(new Font("Segoe UI", Font.BOLD, 18));
+        chart.getTitle().setPaint(new Color(15, 23, 42));
+
+        CategoryPlot plot = chart.getCategoryPlot();
+        plot.setBackgroundPaint(Color.WHITE);
+        plot.setOutlinePaint(new Color(203, 213, 225));
+        plot.setRangeGridlinePaint(new Color(203, 213, 225));
+        plot.getDomainAxis().setLabelFont(new Font("Segoe UI", Font.BOLD, 12));
+        plot.getDomainAxis().setTickLabelFont(new Font("Segoe UI", Font.BOLD, 12));
+        plot.getRangeAxis().setLabelFont(new Font("Segoe UI", Font.BOLD, 12));
+        plot.getRangeAxis().setTickLabelFont(new Font("Segoe UI", Font.PLAIN, 11));
+
+        BarRenderer renderer = (BarRenderer) plot.getRenderer();
+        renderer.setSeriesPaint(0, new Color(0, 51, 102));
+        renderer.setBarPainter(new StandardBarPainter());
+        renderer.setShadowVisible(false);
+        renderer.setDefaultItemLabelGenerator(new StandardCategoryItemLabelGenerator());
+        renderer.setDefaultItemLabelsVisible(true);
+        renderer.setDefaultItemLabelFont(new Font("Segoe UI", Font.BOLD, 12));
+
+        ChartPanel chartPanel = new ChartPanel(chart);
+        chartPanel.setMouseWheelEnabled(false);
+        chartPanel.setOpaque(true);
+        chartPanel.setBackground(Color.WHITE);
+        chartPanel.setPreferredSize(new Dimension(760, 420));
+
+        JDialog dialogo = new JDialog(SwingUtilities.getWindowAncestor(this), "Grafica ABC", Dialog.ModalityType.APPLICATION_MODAL);
+        dialogo.setUndecorated(true);
+
+        JPanel contenedor = new JPanel(new BorderLayout());
+        contenedor.setBorder(BorderFactory.createLineBorder(new Color(148, 163, 184), 1));
+        contenedor.setBackground(Color.WHITE);
+
+        JPanel barra = new JPanel(new BorderLayout());
+        barra.setBackground(new Color(0, 51, 102));
+        barra.setBorder(BorderFactory.createEmptyBorder(10, 14, 10, 14));
+        JLabel lblTitulo = new JLabel("Grafica ABC");
+        lblTitulo.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        lblTitulo.setForeground(Color.WHITE);
+        barra.add(lblTitulo, BorderLayout.WEST);
+
+        JPanel centro = new JPanel(new BorderLayout());
+        centro.setBackground(Color.WHITE);
+        centro.setBorder(BorderFactory.createEmptyBorder(16, 16, 10, 16));
+        centro.add(chartPanel, BorderLayout.CENTER);
+
+        JButton btnCerrar = crearBotonDialogo("Cerrar", true);
+        btnCerrar.addActionListener(evt -> dialogo.dispose());
+
+        JPanel pie = new JPanel(new BorderLayout());
+        pie.setBackground(new Color(241, 245, 249));
+        pie.setBorder(BorderFactory.createEmptyBorder(0, 16, 14, 16));
+        pie.add(btnCerrar, BorderLayout.EAST);
+
+        contenedor.add(barra, BorderLayout.NORTH);
+        contenedor.add(centro, BorderLayout.CENTER);
+        contenedor.add(pie, BorderLayout.SOUTH);
+
+        dialogo.setContentPane(contenedor);
+        dialogo.pack();
+        dialogo.setLocationRelativeTo(this);
+        dialogo.setVisible(true);
     }
 
     private double calcularPuntoReorden(int demandaAnual, int entregaDiasGlobal) {
@@ -450,8 +625,8 @@ public class PanelAnalisisInventario extends JPanel {
 
     private String construirIndicadores(int stockActual, int stockMinimo, double puntoReorden) {
         Set<String> indicadores = new HashSet<>();
-        if (stockActual < stockMinimo) {
-            indicadores.add("Stock bajo");
+        if (stockActual > 0 && stockActual < stockMinimo) {
+            indicadores.add("Stock menor al minimo");
         }
         if (stockMinimo > 0 && stockActual > (stockMinimo * 3)) {
             indicadores.add("Sobreinventario");
@@ -573,6 +748,28 @@ public class PanelAnalisisInventario extends JPanel {
         contenedor.add(campo, gbc);
     }
 
+    private JButton crearBotonSecundario(String texto) {
+        JButton boton = new JButton(texto);
+        boton.setFocusPainted(false);
+        boton.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        boton.setForeground(new Color(0, 51, 102));
+        boton.setBackground(Color.WHITE);
+        boton.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(0, 51, 102), 1),
+                BorderFactory.createEmptyBorder(8, 14, 8, 14)));
+        return boton;
+    }
+
+    private JButton crearBotonAccion(String texto) {
+        JButton boton = new JButton(texto);
+        boton.setFocusPainted(false);
+        boton.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        boton.setForeground(Color.WHITE);
+        boton.setBackground(new Color(0, 51, 102));
+        boton.setBorder(BorderFactory.createEmptyBorder(8, 16, 8, 16));
+        return boton;
+    }
+
     private void configurarTabla(JTable tabla) {
         tabla.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         tabla.setRowHeight(32);
@@ -672,9 +869,11 @@ public class PanelAnalisisInventario extends JPanel {
 
     private void estilizarScrollPane(JScrollPane scrollPane) {
         scrollPane.getViewport().setBackground(Color.WHITE);
-        scrollPane.getVerticalScrollBar().setPreferredSize(new Dimension(12, 12));
-        scrollPane.getVerticalScrollBar().setUnitIncrement(14);
-        scrollPane.getVerticalScrollBar().setUI(new BasicScrollBarUI() {
+        JScrollBar vertical = scrollPane.getVerticalScrollBar();
+        vertical.setPreferredSize(new Dimension(12, 12));
+        vertical.setUnitIncrement(14);
+        vertical.setOpaque(false);
+        vertical.setUI(new BasicScrollBarUI() {
             @Override
             protected void configureScrollBarColors() {
                 thumbColor = new Color(59, 130, 246);
@@ -682,22 +881,150 @@ public class PanelAnalisisInventario extends JPanel {
             }
 
             @Override
-            protected javax.swing.JButton createDecreaseButton(int orientation) {
+            protected void paintTrack(Graphics g, JComponent c, Rectangle trackBounds) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(trackColor);
+                g2.fillRoundRect(trackBounds.x + 2, trackBounds.y, trackBounds.width - 4, trackBounds.height, 10, 10);
+                g2.dispose();
+            }
+
+            @Override
+            protected void paintThumb(Graphics g, JComponent c, Rectangle thumbBounds) {
+                if (thumbBounds.isEmpty() || !scrollbar.isEnabled()) {
+                    return;
+                }
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(new Color(59, 130, 246));
+                g2.fillRoundRect(thumbBounds.x + 2, thumbBounds.y + 1, thumbBounds.width - 4, thumbBounds.height - 2, 10, 10);
+                g2.dispose();
+            }
+
+            @Override
+            protected JButton createDecreaseButton(int orientation) {
                 return crearBotonScroll();
             }
 
             @Override
-            protected javax.swing.JButton createIncreaseButton(int orientation) {
+            protected JButton createIncreaseButton(int orientation) {
                 return crearBotonScroll();
             }
-
-            private javax.swing.JButton crearBotonScroll() {
-                javax.swing.JButton boton = new javax.swing.JButton();
-                boton.setPreferredSize(new Dimension(0, 0));
-                boton.setMinimumSize(new Dimension(0, 0));
-                boton.setMaximumSize(new Dimension(0, 0));
-                return boton;
-            }
         });
+
+        JScrollBar horizontal = scrollPane.getHorizontalScrollBar();
+        if (horizontal != null) {
+            horizontal.setPreferredSize(new Dimension(12, 12));
+            horizontal.setUnitIncrement(14);
+            horizontal.setOpaque(false);
+            horizontal.setUI(new BasicScrollBarUI() {
+                @Override
+                protected void configureScrollBarColors() {
+                    thumbColor = new Color(59, 130, 246);
+                    trackColor = new Color(226, 232, 240);
+                }
+
+                @Override
+                protected void paintTrack(Graphics g, JComponent c, Rectangle trackBounds) {
+                    Graphics2D g2 = (Graphics2D) g.create();
+                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                    g2.setColor(trackColor);
+                    g2.fillRoundRect(trackBounds.x, trackBounds.y + 2, trackBounds.width, trackBounds.height - 4, 10, 10);
+                    g2.dispose();
+                }
+
+                @Override
+                protected void paintThumb(Graphics g, JComponent c, Rectangle thumbBounds) {
+                    if (thumbBounds.isEmpty() || !scrollbar.isEnabled()) {
+                        return;
+                    }
+                    Graphics2D g2 = (Graphics2D) g.create();
+                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                    g2.setColor(new Color(59, 130, 246));
+                    g2.fillRoundRect(thumbBounds.x + 1, thumbBounds.y + 2, thumbBounds.width - 2, thumbBounds.height - 4, 10, 10);
+                    g2.dispose();
+                }
+
+                @Override
+                protected JButton createDecreaseButton(int orientation) {
+                    return crearBotonScroll();
+                }
+
+                @Override
+                protected JButton createIncreaseButton(int orientation) {
+                    return crearBotonScroll();
+                }
+            });
+        }
+    }
+
+    private JButton crearBotonScroll() {
+        JButton boton = new JButton();
+        boton.setPreferredSize(new Dimension(0, 0));
+        boton.setMinimumSize(new Dimension(0, 0));
+        boton.setMaximumSize(new Dimension(0, 0));
+        boton.setOpaque(false);
+        boton.setContentAreaFilled(false);
+        boton.setBorder(BorderFactory.createEmptyBorder());
+        boton.setFocusable(false);
+        return boton;
+    }
+
+    private JButton crearBotonDialogo(String texto, boolean primario) {
+        JButton boton = new JButton(texto);
+        boton.setFocusPainted(false);
+        boton.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        if (primario) {
+            boton.setForeground(Color.WHITE);
+            boton.setBackground(new Color(0, 51, 102));
+            boton.setBorder(BorderFactory.createEmptyBorder(8, 18, 8, 18));
+        } else {
+            boton.setForeground(new Color(0, 51, 102));
+            boton.setBackground(Color.WHITE);
+            boton.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(new Color(0, 51, 102), 1),
+                    BorderFactory.createEmptyBorder(8, 18, 8, 18)));
+        }
+        return boton;
+    }
+
+    private void mostrarDialogo(String titulo, String mensaje) {
+        JDialog dialogo = new JDialog(SwingUtilities.getWindowAncestor(this), titulo, Dialog.ModalityType.APPLICATION_MODAL);
+        dialogo.setUndecorated(true);
+
+        JPanel contenedor = new JPanel(new BorderLayout());
+        contenedor.setBorder(BorderFactory.createLineBorder(new Color(148, 163, 184), 1));
+        contenedor.setBackground(Color.WHITE);
+
+        JPanel barra = new JPanel(new BorderLayout());
+        barra.setBackground(new Color(0, 51, 102));
+        barra.setBorder(BorderFactory.createEmptyBorder(10, 14, 10, 14));
+        JLabel lblTitulo = new JLabel(titulo);
+        lblTitulo.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        lblTitulo.setForeground(Color.WHITE);
+        barra.add(lblTitulo, BorderLayout.WEST);
+
+        JLabel lblMensaje = new JLabel("<html><body style='width:300px;font-family:Segoe UI;font-size:11px;color:#0f172a;line-height:1.4;'>"
+                + mensaje.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
+                + "</body></html>");
+        lblMensaje.setBorder(BorderFactory.createEmptyBorder(14, 16, 12, 16));
+
+        JButton btnOk = crearBotonDialogo("OK", true);
+        btnOk.addActionListener(evt -> dialogo.dispose());
+
+        JPanel pie = new JPanel(new BorderLayout());
+        pie.setBackground(new Color(241, 245, 249));
+        pie.setBorder(BorderFactory.createEmptyBorder(0, 16, 14, 16));
+        pie.add(btnOk, BorderLayout.EAST);
+
+        contenedor.add(barra, BorderLayout.NORTH);
+        contenedor.add(lblMensaje, BorderLayout.CENTER);
+        contenedor.add(pie, BorderLayout.SOUTH);
+
+        dialogo.setContentPane(contenedor);
+        dialogo.pack();
+        dialogo.setLocationRelativeTo(this);
+        dialogo.getRootPane().setDefaultButton(btnOk);
+        dialogo.setVisible(true);
     }
 }

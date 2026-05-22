@@ -172,6 +172,30 @@ public class ControlandoInventario {
         return new ParametrosAnalisis(100.0, 10.0, 1);
     }
 
+    public ParametrosAnalisis leerParametrosRegistrados() throws IOException {
+        normalizarArchivoConfiguracion();
+        File archivo = new File(ARCHIVO_CONFIG);
+        try (BufferedReader br = new BufferedReader(new FileReader(archivo))) {
+            String linea;
+            while ((linea = br.readLine()) != null) {
+                if (linea == null || linea.trim().isEmpty()) {
+                    continue;
+                }
+                String[] datos = linea.split(",", -1);
+                if (esEncabezadoConfiguracion(datos)) {
+                    continue;
+                }
+                if (datos.length >= 3) {
+                    return new ParametrosAnalisis(
+                            parsearDecimalSeguro(datos[0], 100.0),
+                            parsearDecimalSeguro(datos[1], 10.0),
+                            parsearEnteroSeguro(datos[2], 1));
+                }
+            }
+        }
+        return null;
+    }
+
     public void guardarParametrosAnalisis(double costoPedido, double h, int diasEntrega) throws IOException {
         normalizarArchivoConfiguracion();
         List<String> lineas = new ArrayList<>();
@@ -694,7 +718,6 @@ public class ControlandoInventario {
         if (!archivo.exists()) {
             try (PrintWriter pw = new PrintWriter(new FileWriter(archivo))) {
                 pw.println(ENCABEZADO_CONFIG);
-                pw.println(CONFIG_DEFAULT);
             }
             return;
         }
@@ -719,10 +742,6 @@ public class ControlandoInventario {
                         String.valueOf(parsearEnteroSeguro(datos[2], 1))));
                 encontroDatos = true;
             }
-        }
-
-        if (!encontroDatos) {
-            resultado.add(CONFIG_DEFAULT);
         }
 
         Files.write(archivo.toPath(), resultado);

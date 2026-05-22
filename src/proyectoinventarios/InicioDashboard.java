@@ -101,8 +101,7 @@ public class InicioDashboard extends JFrame {
         bloqueMenu.add(crearBotonMenu("Inicio / Dashboard", true, this::mostrarInicio));
         bloqueMenu.add(crearBotonMenu("Catalogo de productos", true, this::mostrarCatalogo));
         bloqueMenu.add(crearBotonMenu("Movimiento de inventario", true, this::mostrarMovimientoInventario));
-        bloqueMenu.add(crearBotonMenu("Analisis de inventario", false, null));
-        bloqueMenu.add(crearBotonMenu("Reportes", false, null));
+        bloqueMenu.add(crearBotonMenu("Analisis de inventario", true, this::mostrarAnalisisInventario));
         bloqueMenu.add(crearBotonMenu("Configuracion", true, this::mostrarConfiguracion));
         sidebar.add(bloqueMenu);
         sidebar.add(Box.createVerticalGlue());

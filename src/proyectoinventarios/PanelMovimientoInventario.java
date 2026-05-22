@@ -18,6 +18,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -53,6 +54,7 @@ import javax.swing.table.DefaultTableModel;
 public class PanelMovimientoInventario extends JPanel {
 
     private final ControlandoInventario control = new ControlandoInventario();
+    private final MovimientoInventarioService movimientoService = new MovimientoInventarioService();
     private final HashMap<String, String[]> productosPorClave = new HashMap<>();
     private final HashMap<String, Integer> numeroProductoPorClave = new HashMap<>();
     private final List<ControlandoInventario.DetalleMovimientoData> detallesPendientes = new ArrayList<>();
@@ -403,13 +405,7 @@ public class PanelMovimientoInventario extends JPanel {
 
             if ("Salida".equalsIgnoreCase(tipoMovimiento)) {
                 int stockActual = Integer.parseInt(producto[3]);
-                int cantidadPendiente = 0;
-                for (ControlandoInventario.DetalleMovimientoData detalle : detallesPendientes) {
-                    if (detalle.getClaveProducto().equalsIgnoreCase(claveProducto)) {
-                        cantidadPendiente = detalle.getCantidad();
-                        break;
-                    }
-                }
+                int cantidadPendiente = movimientoService.obtenerCantidadPendiente(detallesPendientes, claveProducto);
                 if ((cantidadPendiente + cantidad) > stockActual) {
                     mostrarDialogo("Movimiento de inventario", "No puede dar salida si el stock no es suficiente.");
                     txtCantidad.requestFocusInWindow();
@@ -418,29 +414,8 @@ public class PanelMovimientoInventario extends JPanel {
                 }
             }
 
-            boolean actualizado = false;
-            for (int i = 0; i < detallesPendientes.size(); i++) {
-                ControlandoInventario.DetalleMovimientoData detalle = detallesPendientes.get(i);
-                if (detalle.getClaveProducto().equalsIgnoreCase(claveProducto)
-                        && detalle.getTipoMovimiento().equalsIgnoreCase(tipoMovimiento)) {
-                    int nuevaCantidad = "Ajuste".equalsIgnoreCase(tipoMovimiento)
-                            ? cantidad
-                            : detalle.getCantidad() + cantidad;
-                    detallesPendientes.set(i, new ControlandoInventario.DetalleMovimientoData(
-                            claveProducto,
-                            producto[1],
-                            nuevaCantidad,
-                            tipoMovimiento,
-                            motivoCapturado));
-                    actualizado = true;
-                    break;
-                }
-            }
-
-            if (!actualizado) {
-                detallesPendientes.add(new ControlandoInventario.DetalleMovimientoData(
-                        claveProducto, producto[1], cantidad, tipoMovimiento, motivoCapturado));
-            }
+            movimientoService.agregarOActualizarDetalle(
+                    detallesPendientes, claveProducto, producto[1], cantidad, tipoMovimiento, motivoCapturado);
 
             if (detallesPendientes.size() == 1) {
                 tipoNotaActual = tipoMovimiento;
@@ -448,7 +423,7 @@ public class PanelMovimientoInventario extends JPanel {
             }
 
             refrescarTablaDetalleConPendientes();
-            limpiarDetallePendiente();
+            limpiarDetallePendiente(true);
             return true;
         } catch (NumberFormatException ex) {
             mostrarDialogo("Movimiento de inventario", "La cantidad debe ser un numero valido.");
@@ -608,23 +583,46 @@ public class PanelMovimientoInventario extends JPanel {
 
     private void refrescarTablaDetalleConPendientes() {
         modeloDetalleMovimiento.setRowCount(0);
+        LinkedHashMap<String, Integer> cantidadesPorProducto = new LinkedHashMap<>();
+        LinkedHashMap<String, String> nombresPorProducto = new LinkedHashMap<>();
+
         for (ControlandoInventario.DetalleMovimientoData detalle : detallesPendientes) {
+            String clave = detalle.getClaveProducto();
+            String tipo = detalle.getTipoMovimiento();
+            int cantidadActual = cantidadesPorProducto.getOrDefault(clave, 0);
+            int nuevaCantidad;
+
+            if ("Salida".equalsIgnoreCase(tipo)) {
+                nuevaCantidad = cantidadActual - detalle.getCantidad();
+            } else if ("Ajuste".equalsIgnoreCase(tipo)) {
+                nuevaCantidad = detalle.getCantidad();
+            } else {
+                nuevaCantidad = cantidadActual + detalle.getCantidad();
+            }
+
+            cantidadesPorProducto.put(clave, nuevaCantidad);
+            nombresPorProducto.put(clave, detalle.getNombreProducto());
+        }
+
+        for (String clave : cantidadesPorProducto.keySet()) {
             modeloDetalleMovimiento.addRow(new Object[]{
-                detalle.getClaveProducto(),
-                detalle.getCantidad(),
-                detalle.getClaveProducto() + " - " + detalle.getNombreProducto()
+                clave,
+                cantidadesPorProducto.get(clave),
+                clave + " - " + nombresPorProducto.get(clave)
             });
         }
     }
 
-    private void limpiarDetallePendiente() {
+    private void limpiarDetallePendiente(boolean conservarTipoYMotivo) {
         SwingUtilities.invokeLater(() -> {
             txtCantidad.setText("1");
-            comboTipo.setSelectedIndex(0);
-            txtMotivo.setText("");
+            if (!conservarTipoYMotivo) {
+                comboTipo.setSelectedIndex(0);
+                txtMotivo.setText("");
+                txtMotivo.setCaretPosition(0);
+            }
             comboProducto.setSelectedIndex(0);
             actualizarCodigoProducto();
-            txtMotivo.setCaretPosition(0);
             solicitarFocoInicial();
             revalidate();
             repaint();
@@ -637,7 +635,7 @@ public class PanelMovimientoInventario extends JPanel {
         motivoNotaActual = "";
         detallesPendientes.clear();
         modeloDetalleMovimiento.setRowCount(0);
-        limpiarDetallePendiente();
+        limpiarDetallePendiente(false);
     }
 
     private void cargarTablaStockActual(List<String[]> productos) {
@@ -650,7 +648,7 @@ public class PanelMovimientoInventario extends JPanel {
                 producto[1],
                 stockActual,
                 stockMinimo,
-                calcularIndicadorStock(stockActual, stockMinimo)
+                movimientoService.calcularIndicadorStock(stockActual, stockMinimo)
             });
         }
     }
@@ -661,19 +659,6 @@ public class PanelMovimientoInventario extends JPanel {
         } catch (NumberFormatException ex) {
             return 0;
         }
-    }
-
-    private String calcularIndicadorStock(int stockActual, int stockMinimo) {
-        if (stockActual == 0) {
-            return "Agotado";
-        }
-        if (stockMinimo > stockActual) {
-            return "Stock bajo";
-        }
-        if (stockMinimo > 0 && stockActual > (stockMinimo * 3)) {
-            return "Sobreinventario";
-        }
-        return "Normal";
     }
 
     private void confirmarLimpieza() {
@@ -724,24 +709,14 @@ public class PanelMovimientoInventario extends JPanel {
             return;
         }
 
-        int indiceCoincidencia = -1;
-        String codigoMayus = codigo.toUpperCase();
+        List<String> itemsProducto = new ArrayList<>();
         for (int i = 1; i < comboProducto.getItemCount(); i++) {
-            String item = comboProducto.getItemAt(i);
-            String clave = item.split(" - ", 2)[0];
-            String claveMayus = clave.toUpperCase();
-            if (claveMayus.equals(codigoMayus)) {
-                indiceCoincidencia = i;
-                break;
-            }
-            if (indiceCoincidencia == -1 && claveMayus.startsWith(codigoMayus)) {
-                indiceCoincidencia = i;
-            }
+            itemsProducto.add(comboProducto.getItemAt(i));
         }
-
-        if (indiceCoincidencia >= 0 && comboProducto.getSelectedIndex() != indiceCoincidencia) {
+        int indiceEncontrado = movimientoService.encontrarIndiceProductoPorCodigo(codigo, itemsProducto);
+        if (indiceEncontrado != comboProducto.getSelectedIndex()) {
             actualizandoCodigo = true;
-            comboProducto.setSelectedIndex(indiceCoincidencia);
+            comboProducto.setSelectedIndex(indiceEncontrado);
             actualizandoCodigo = false;
         }
     }
@@ -794,7 +769,7 @@ public class PanelMovimientoInventario extends JPanel {
         JPanel panelSuperior = new JPanel(new BorderLayout(0, 8));
         panelSuperior.setOpaque(false);
         panelSuperior.setBorder(BorderFactory.createEmptyBorder(14, 16, 10, 16));
-        panelSuperior.add(crearTituloSeccion("Codigo del producto"), BorderLayout.NORTH);
+        panelSuperior.add(crearTituloSeccion("Codigo exacto del producto"), BorderLayout.NORTH);
         panelSuperior.add(txtCodigoHistorial, BorderLayout.CENTER);
 
         JPanel panelTabla = new JPanel(new BorderLayout(0, 8));
@@ -915,8 +890,22 @@ public class PanelMovimientoInventario extends JPanel {
             return;
         }
 
+        String claveProducto = movimientoService.resolverClaveExactaHistorial(codigo, productosPorClave);
+        if (claveProducto.isEmpty()) {
+            modeloHistorialProducto.addRow(new Object[]{
+                "-",
+                "-",
+                "-",
+                "-",
+                "Escribe la clave exacta o el numero exacto del producto.",
+                "-",
+                "-"
+            });
+            return;
+        }
+
         try {
-            for (String[] movimiento : control.leerMovimientosPorPrefijoClave(codigo)) {
+            for (String[] movimiento : control.leerMovimientosPorClave(claveProducto)) {
                 modeloHistorialProducto.addRow(new Object[]{
                     movimiento[4],
                     movimiento[0],
@@ -925,6 +914,17 @@ public class PanelMovimientoInventario extends JPanel {
                     movimiento[6],
                     movimiento[7],
                     movimiento[8]
+                });
+            }
+            if (modeloHistorialProducto.getRowCount() == 0) {
+                modeloHistorialProducto.addRow(new Object[]{
+                    "-",
+                    "-",
+                    "-",
+                    "-",
+                    "No hay movimientos para la clave indicada.",
+                    "-",
+                    "-"
                 });
             }
         } catch (Exception ex) {

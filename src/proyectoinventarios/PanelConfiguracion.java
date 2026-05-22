@@ -4,18 +4,17 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
+import java.awt.Dialog;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
-import java.text.DecimalFormat;
-import java.text.DecimalFormatSymbols;
-import java.util.Locale;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JComponent;
+import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -24,14 +23,14 @@ import javax.swing.SwingUtilities;
 
 public class PanelConfiguracion extends JPanel {
 
-    private final ControlandoInventario control = new ControlandoInventario();
-    private final DecimalFormat formatoMoneda = new DecimalFormat("0.00", DecimalFormatSymbols.getInstance(Locale.US));
+    private final ConfiguracionService configuracionService = new ConfiguracionService();
 
     private JTextField txtCostoPedido;
     private JTextField txtCostoMantenimiento;
     private JTextField txtTiempoEntrega;
     private JButton btnRegistrar;
     private JButton btnEditar;
+    private JButton btnGuardar;
     private Runnable onConfiguracionGuardada;
     private boolean modoEdicion;
 
@@ -78,14 +77,18 @@ public class PanelConfiguracion extends JPanel {
 
         btnRegistrar = crearBotonAccion("Registrar");
         btnEditar = crearBotonAccion("Editar");
-        btnRegistrar.addActionListener(evt -> guardarConfiguracion());
+        btnGuardar = crearBotonAccion("Guardar");
+        btnRegistrar.addActionListener(evt -> registrarConfiguracion());
         btnEditar.addActionListener(evt -> activarEdicion());
+        btnGuardar.addActionListener(evt -> guardarEdicion());
 
         acciones.add(tituloAcciones);
         acciones.add(Box.createRigidArea(new Dimension(0, 10)));
         acciones.add(btnRegistrar);
         acciones.add(Box.createRigidArea(new Dimension(0, 8)));
         acciones.add(btnEditar);
+        acciones.add(Box.createRigidArea(new Dimension(0, 8)));
+        acciones.add(btnGuardar);
         acciones.add(Box.createVerticalGlue());
 
         txtCostoPedido = crearCampo();
@@ -130,22 +133,30 @@ public class PanelConfiguracion extends JPanel {
             txtTiempoEntrega.requestFocusInWindow();
             txtTiempoEntrega.selectAll();
         });
-        txtTiempoEntrega.addActionListener(evt -> btnRegistrar.doClick());
+        txtTiempoEntrega.addActionListener(evt -> {
+            if (modoEdicion) {
+                btnGuardar.doClick();
+            } else {
+                btnRegistrar.doClick();
+            }
+        });
     }
 
     public void recargarDatos() {
         try {
-            ControlandoInventario.ParametrosAnalisis parametros = control.leerParametrosAnalisis();
-            txtCostoPedido.setText(formatoMoneda.format(parametros.getCostoPedido()));
-            txtCostoMantenimiento.setText(formatoMoneda.format(parametros.getH()));
-            txtTiempoEntrega.setText(String.valueOf(parametros.getDiasEntregaGlobal()));
+            ConfiguracionService.EstadoConfiguracion estado = configuracionService.cargarEstado();
+            if (!estado.isHayDatos()) {
+                limpiarCampos();
+                habilitarRegistro();
+            } else {
+                aplicarValores(estado.getCostoPedido(), estado.getCostoMantenimiento(), estado.getTiempoEntrega());
+                bloquearCampos();
+            }
         } catch (Exception ex) {
-            txtCostoPedido.setText("100.00");
-            txtCostoMantenimiento.setText("10.00");
-            txtTiempoEntrega.setText("1");
+            limpiarCampos();
+            habilitarRegistro();
             mostrarDialogo("Configuracion", "No fue posible cargar los parametros.");
         }
-        bloquearCampos();
     }
 
     public void solicitarFocoInicial() {
@@ -168,6 +179,9 @@ public class PanelConfiguracion extends JPanel {
         txtCostoPedido.setEditable(true);
         txtCostoMantenimiento.setEditable(true);
         txtTiempoEntrega.setEditable(true);
+        btnRegistrar.setEnabled(false);
+        btnEditar.setEnabled(false);
+        btnGuardar.setEnabled(true);
         txtCostoPedido.requestFocusInWindow();
         txtCostoPedido.selectAll();
     }
@@ -177,75 +191,80 @@ public class PanelConfiguracion extends JPanel {
         txtCostoPedido.setEditable(false);
         txtCostoMantenimiento.setEditable(false);
         txtTiempoEntrega.setEditable(false);
+        btnRegistrar.setEnabled(false);
+        btnEditar.setEnabled(true);
+        btnGuardar.setEnabled(false);
     }
 
-    private void guardarConfiguracion() {
-        try {
-            String costoPedidoTexto = textoLimpio(txtCostoPedido);
-            String costoMantenimientoTexto = textoLimpio(txtCostoMantenimiento);
-            String tiempoEntregaTexto = textoLimpio(txtTiempoEntrega);
+    private void habilitarRegistro() {
+        modoEdicion = false;
+        txtCostoPedido.setEditable(true);
+        txtCostoMantenimiento.setEditable(true);
+        txtTiempoEntrega.setEditable(true);
+        btnRegistrar.setEnabled(true);
+        btnEditar.setEnabled(false);
+        btnGuardar.setEnabled(false);
+    }
 
-            if (costoPedidoTexto.isEmpty() || costoMantenimientoTexto.isEmpty() || tiempoEntregaTexto.isEmpty()) {
-                mostrarDialogo("Configuracion", "Hay que llenar todos los campos.");
-                txtCostoPedido.requestFocusInWindow();
-                txtCostoPedido.selectAll();
-                return;
-            }
+    private void registrarConfiguracion() {
+        guardarConfiguracion(true);
+    }
 
-            double costoPedido = Double.parseDouble(costoPedidoTexto);
-            if (costoPedido <= 0) {
-                mostrarDialogo("Configuracion", "El costo por pedido debe ser numerico y mayor que 0.");
-                txtCostoPedido.requestFocusInWindow();
-                txtCostoPedido.selectAll();
-                return;
-            }
+    private void guardarEdicion() {
+        guardarConfiguracion(false);
+    }
 
-            double costoMantenimiento = Double.parseDouble(costoMantenimientoTexto);
-            if (costoMantenimiento <= 0) {
-                mostrarDialogo("Configuracion", "El costo de mantenimiento debe ser numerico y mayor que 0.");
-                txtCostoMantenimiento.requestFocusInWindow();
-                txtCostoMantenimiento.selectAll();
-                return;
-            }
+    private void guardarConfiguracion(boolean esRegistroNuevo) {
+        ConfiguracionService.ResultadoConfiguracion resultado = configuracionService.guardar(
+                new ConfiguracionService.ConfiguracionFormularioData(
+                        textoLimpio(txtCostoPedido),
+                        textoLimpio(txtCostoMantenimiento),
+                        textoLimpio(txtTiempoEntrega)),
+                esRegistroNuevo);
 
-            if (tiempoEntregaTexto.contains(".")) {
-                mostrarDialogo("Configuracion", "El tiempo de entrega no debe permitir valores decimales.");
-                txtTiempoEntrega.requestFocusInWindow();
-                txtTiempoEntrega.selectAll();
-                return;
-            }
-
-            int tiempoEntrega = Integer.parseInt(tiempoEntregaTexto);
-            if (tiempoEntrega <= 0) {
-                mostrarDialogo("Configuracion", "El tiempo de entrega debe ser numerico y mayor que 0.");
-                txtTiempoEntrega.requestFocusInWindow();
-                txtTiempoEntrega.selectAll();
-                return;
-            }
-
-            control.guardarParametrosAnalisis(costoPedido, costoMantenimiento, tiempoEntrega);
-            txtCostoPedido.setText(formatoMoneda.format(costoPedido));
-            txtCostoMantenimiento.setText(formatoMoneda.format(costoMantenimiento));
-            txtTiempoEntrega.setText(String.valueOf(tiempoEntrega));
-            bloquearCampos();
-
-            if (onConfiguracionGuardada != null) {
-                onConfiguracionGuardada.run();
-            }
-
-            mostrarDialogo("Configuracion", "Los parametros se guardaron correctamente.");
-            solicitarFocoInicial();
-        } catch (NumberFormatException ex) {
-            mostrarDialogo("Configuracion", "Los valores de datos deben ser numericos y mayores que 0.");
-            txtCostoPedido.requestFocusInWindow();
-            txtCostoPedido.selectAll();
-        } catch (Exception ex) {
-            mostrarDialogo("Configuracion", "No fue posible guardar los parametros.");
+        if (!resultado.isValido()) {
+            mostrarDialogo("Configuracion", resultado.getMensaje());
+            enfocarCampoConfiguracion(resultado.getCampo());
+            return;
         }
+
+        aplicarValores(
+                resultado.getCostoPedidoFormateado(),
+                resultado.getCostoMantenimientoFormateado(),
+                resultado.getTiempoEntregaFormateado());
+        bloquearCampos();
+
+        if (onConfiguracionGuardada != null) {
+            onConfiguracionGuardada.run();
+        }
+
+        mostrarDialogo("Configuracion", resultado.getMensaje());
+        solicitarFocoInicial();
     }
 
     private String textoLimpio(JTextField campo) {
         return campo.getText() == null ? "" : campo.getText().trim();
+    }
+
+    private void limpiarCampos() {
+        aplicarValores("", "", "");
+    }
+
+    private void aplicarValores(String costoPedido, String costoMantenimiento, String tiempoEntrega) {
+        txtCostoPedido.setText(costoPedido);
+        txtCostoMantenimiento.setText(costoMantenimiento);
+        txtTiempoEntrega.setText(tiempoEntrega);
+    }
+
+    private void enfocarCampoConfiguracion(String campo) {
+        JTextField objetivo = switch (campo == null ? "" : campo) {
+            case "costoMantenimiento" -> txtCostoMantenimiento;
+            case "tiempoEntrega" -> txtTiempoEntrega;
+            case "general" -> txtCostoPedido;
+            default -> txtCostoPedido;
+        };
+        objetivo.requestFocusInWindow();
+        objetivo.selectAll();
     }
 
     private JPanel crearCard() {
@@ -323,6 +342,47 @@ public class PanelConfiguracion extends JPanel {
     }
 
     private void mostrarDialogo(String titulo, String mensaje) {
-        JOptionPane.showMessageDialog(this, mensaje, titulo, JOptionPane.INFORMATION_MESSAGE);
+        JDialog dialogo = new JDialog(SwingUtilities.getWindowAncestor(this), titulo, Dialog.ModalityType.APPLICATION_MODAL);
+        dialogo.setUndecorated(true);
+
+        JPanel contenedor = new JPanel(new BorderLayout());
+        contenedor.setBorder(BorderFactory.createLineBorder(new Color(148, 163, 184), 1));
+        contenedor.setBackground(Color.WHITE);
+
+        JPanel barra = new JPanel(new BorderLayout());
+        barra.setBackground(new Color(0, 51, 102));
+        barra.setBorder(BorderFactory.createEmptyBorder(10, 14, 10, 14));
+        JLabel lblTitulo = new JLabel(titulo);
+        lblTitulo.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        lblTitulo.setForeground(Color.WHITE);
+        barra.add(lblTitulo, BorderLayout.WEST);
+
+        JLabel lblMensaje = new JLabel("<html><body style='width:300px;font-family:Segoe UI;font-size:11px;color:#0f172a;line-height:1.4;'>"
+                + mensaje.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
+                + "</body></html>");
+        lblMensaje.setBorder(BorderFactory.createEmptyBorder(14, 16, 12, 16));
+
+        JButton btnOk = new JButton("OK");
+        btnOk.setFocusPainted(false);
+        btnOk.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        btnOk.setForeground(Color.WHITE);
+        btnOk.setBackground(new Color(0, 51, 102));
+        btnOk.setBorder(BorderFactory.createEmptyBorder(8, 20, 8, 20));
+        btnOk.addActionListener(evt -> dialogo.dispose());
+
+        JPanel pie = new JPanel(new BorderLayout());
+        pie.setBackground(new Color(241, 245, 249));
+        pie.setBorder(BorderFactory.createEmptyBorder(0, 16, 14, 16));
+        pie.add(btnOk, BorderLayout.EAST);
+
+        contenedor.add(barra, BorderLayout.NORTH);
+        contenedor.add(lblMensaje, BorderLayout.CENTER);
+        contenedor.add(pie, BorderLayout.SOUTH);
+
+        dialogo.setContentPane(contenedor);
+        dialogo.pack();
+        dialogo.setLocationRelativeTo(this);
+        dialogo.getRootPane().setDefaultButton(btnOk);
+        dialogo.setVisible(true);
     }
 }
