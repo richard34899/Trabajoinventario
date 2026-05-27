@@ -98,7 +98,6 @@ public class InicioDashboard extends JFrame {
         bloqueMenu.setOpaque(false);
         bloqueMenu.setAlignmentX(Component.LEFT_ALIGNMENT);
         bloqueMenu.setMaximumSize(new Dimension(Integer.MAX_VALUE, 380));
-        bloqueMenu.add(crearBotonMenu("Inicio / Dashboard", true, this::mostrarInicio));
         bloqueMenu.add(crearBotonMenu("Catalogo de productos", true, this::mostrarCatalogo));
         bloqueMenu.add(crearBotonMenu("Movimiento de inventario", true, this::mostrarMovimientoInventario));
         bloqueMenu.add(crearBotonMenu("Analisis de inventario", true, this::mostrarAnalisisInventario));

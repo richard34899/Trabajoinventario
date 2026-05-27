@@ -38,6 +38,7 @@ No. movimiento,Clave,Producto,Tipo,Fecha,Cantidad,Motivo,Stock antes,Stock despu
 21,A109,Mouse Logitech,Salida,2026-05-20,4,,32,28
 21,A109,Mouse Logitech,Salida,2026-05-20,6,,38,32
 22,4524,hola buenas tardes me llamaoo cinthia,Salida,2026-05-20,50,,50,0
+23,E459,Monitor  HP dual,Salida,2026-05-22,33,,33,0
 18,A109,Mouse Logitech,Ajuste,2026-05-13,10,Prueba,,10
 15,A123,Monitor hp,Ajuste,2026-05-12,10,obligatorio,,10
 16,A109,Mouse Logitech,Ajuste,2026-05-12,1,nuevo obligacion,,1
@@ -73,4 +74,3 @@ No. movimiento,Clave,Producto,Tipo,Fecha,Cantidad,Motivo,Stock antes,Stock despu
 20,A109,Mouse Logitech,Entrada,2026-05-20,16,,10,26
 21,A109,Mouse Logitech,Salida,2026-05-20,4,,26,22
 21,A109,Mouse Logitech,Entrada,2026-05-20,6,,22,28
-23,E459,Monitor  HP dual,Salida,2026-05-22,33,,33,0

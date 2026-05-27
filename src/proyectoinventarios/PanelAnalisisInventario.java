@@ -336,6 +336,7 @@ public class PanelAnalisisInventario extends JPanel {
         ControlandoInventario.ParametrosAnalisis parametros = control.leerParametrosAnalisis();
 
         Map<String, Double> consumoPorProducto = new HashMap<>();
+        Map<String, Integer> ventasPorProducto = new HashMap<>();
         double consumoTotal = 0.0;
 
         for (String[] movimiento : movimientos) {
@@ -351,9 +352,10 @@ public class PanelAnalisisInventario extends JPanel {
                 continue;
             }
             int cantidad = parseEntero(movimiento[5]);
-            double costoActual = parseDecimal(producto[6]);
-            double consumoProducto = cantidad * costoActual;
+            double precioActual = parseDecimal(producto[5]);
+            double consumoProducto = cantidad * precioActual;
             consumoPorProducto.put(clave, consumoPorProducto.getOrDefault(clave, 0.0) + consumoProducto);
+            ventasPorProducto.put(clave, ventasPorProducto.getOrDefault(clave, 0) + 1);
             consumoTotal += consumoProducto;
         }
 
@@ -368,10 +370,24 @@ public class PanelAnalisisInventario extends JPanel {
 
         Map<String, String> grupoABC = calcularClasificacionABC(productos, consumoPorProducto, consumoTotal);
 
+        List<String[]> productosOrdenados = new ArrayList<>(productos);
+        productosOrdenados.sort((a, b) -> {
+            int ventasA = ventasPorProducto.getOrDefault(a[0], 0);
+            int ventasB = ventasPorProducto.getOrDefault(b[0], 0);
+            int comparacion = Integer.compare(ventasB, ventasA);
+            if (comparacion != 0) {
+                return comparacion;
+            }
+            return a[1].compareToIgnoreCase(b[1]);
+        });
+
         analisisActual.clear();
         modeloAnalisis.setRowCount(0);
-        for (String[] producto : productos) {
+        for (String[] producto : productosOrdenados) {
             String clave = producto[0];
+            if (ventasPorProducto.getOrDefault(clave, 0) <= 0) {
+                continue;
+            }
             String nombre = producto[1];
             String categoria = traducirCategoria(producto[2]);
             double precio = parseDecimal(producto[5]);
@@ -407,14 +423,24 @@ public class PanelAnalisisInventario extends JPanel {
         }
     }
 
-    private Map<String, String> calcularClasificacionABC(List<String[]> productos, Map<String, Double> consumoPorProducto, double consumoTotal) {
+    private Map<String, String> calcularClasificacionABC(List<String[]> productos, Map<String, Double> consumoPorProducto,
+            double consumoTotal) {
         Map<String, String> clasificacion = new HashMap<>();
         if (consumoTotal <= 0.0) {
             return clasificacion;
         }
 
         List<String[]> productosOrdenados = new ArrayList<>(productos);
-        productosOrdenados.sort(Comparator.comparingDouble((String[] p) -> consumoPorProducto.getOrDefault(p[0], 0.0)).reversed());
+        productosOrdenados.sort((a, b) -> {
+            double consumoA = consumoPorProducto.getOrDefault(a[0], 0.0);
+            double consumoB = consumoPorProducto.getOrDefault(b[0], 0.0);
+            int comparacionConsumo = Double.compare(consumoB, consumoA);
+            if (comparacionConsumo != 0) {
+                return comparacionConsumo;
+            }
+
+            return a[1].compareToIgnoreCase(b[1]);
+        });
 
         double acumulado = 0.0;
         for (String[] producto : productosOrdenados) {
